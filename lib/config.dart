@@ -1,1 +1,1 @@
-const apiBaseUrl = 'https://twoj-worker.workers.dev';
+const apiBaseUrl = 'https://trainly-proxy.szkodnik-maciej.workers.dev';
