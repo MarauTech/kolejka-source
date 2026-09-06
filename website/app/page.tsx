@@ -3,15 +3,16 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Download, ArrowUpRight, TrainFront, MapPin, Clock3 } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
+const basePath = process.env.NODE_ENV === 'production' ? '/kolejka' : '';
 const repo = 'https://github.com/MarauTech/kolejka';
 const apk = `${repo}/releases/download/v1.0.0-beta.1/kolejka-1.0.0-beta.1.apk`;
 export default function Home() {
   return <main>
-    <nav className="nav shell" aria-label="Nawigacja"><Link className="brand" href="/kolejka/"><Image unoptimized src="/kolejka/kolejka.png" width="42" height="42" alt=""/>Kolejka <span className="beta">BETA</span></Link><a href={repo}>GitHub <ArrowUpRight size={16}/></a></nav>
+    <nav className="nav shell" aria-label="Nawigacja"><Link className="brand" href={`${basePath}/`}><Image unoptimized src={`${basePath}/kolejka.png`} width="42" height="42" alt=""/>Kolejka <span className="beta">BETA</span></Link><a href={repo}>GitHub <ArrowUpRight size={16}/></a></nav>
     <section className="hero shell">
       <div className="intro"><p className="eyebrow">TWÓJ PODRĘCZNY ROZKŁAD JAZDY</p><h1>Kolej pod ręką.<br/><span>Dokądkolwiek jedziesz.</span></h1><p className="lead">Połączenia, tablice stacyjne i opóźnienia w jednej aplikacji. Pobierz Kolejkę na Androida i sprawdź swoją następną podróż.</p>
       <a className={`${buttonVariants({size:'lg'})} download`} href={apk}><Download size={21}/> Pobierz na Androida</a><p className="release-meta">1.0.0-beta.1 · plik APK · bez konta</p><a className="text-link" href="#instalacja">Jak zainstalować aplikację? <span>↓</span></a></div>
-      <aside className="release-panel" aria-label="Informacje o wydaniu"><div className="panel-top"><span>KOLEJKA / ANDROID</span><span className="status-dot">WERSJA TESTOWA</span></div><Image unoptimized className="app-icon" src="/kolejka/kolejka.png" width="160" height="160" alt="Logo aplikacji Kolejka"/><div className="panel-title">Następny przystanek:<br/><strong>Twoja podróż.</strong></div><div className="panel-bottom"><span>WYDANIE <b>01 / BETA</b></span><a href={`${repo}/releases/tag/v1.0.0-beta.1`}>Co nowego <ArrowUpRight size={17}/></a></div></aside>
+      <aside className="release-panel" aria-label="Informacje o wydaniu"><div className="panel-top"><span>KOLEJKA / ANDROID</span><span className="status-dot">WERSJA TESTOWA</span></div><Image unoptimized className="app-icon" src={`${basePath}/kolejka.png`} width="160" height="160" alt="Logo aplikacji Kolejka"/><div className="panel-title">Następny przystanek:<br/><strong>Twoja podróż.</strong></div><div className="panel-bottom"><span>WYDANIE <b>01 / BETA</b></span><a href={`${repo}/releases/tag/v1.0.0-beta.1`}>Co nowego <ArrowUpRight size={17}/></a></div></aside>
     </section>
     <section className="features shell" aria-label="Możliwości aplikacji">{[
       [TrainFront,'Znajdź połączenie','Wybierz stacje A i B, sprawdź godziny i zapisz ulubioną trasę.'],
