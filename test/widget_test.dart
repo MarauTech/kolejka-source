@@ -175,12 +175,68 @@ void main() {
           StationOnRoute(stationId: 20, orderNumber: 2, raw: {}),
         ],
         stationNames: {10: 'Gdańsk', 20: 'Tczew'},
+        nowOverride: DateTime.parse('2025-04-14T11:00:00'),
       );
 
       expect(pos.type, TrainStatusType.betweenStations);
       expect(pos.currentStationId, 10);
       expect(pos.nextStationId, 20);
       expect(pos.description, contains('Ostatnia stacja: Gdańsk'));
+    });
+
+    test('IC 8314 Regression: Future station cannot be marked as reached even if isConfirmed', () {
+      final op = TrainOperation(
+        scheduleId: 1,
+        orderId: 1,
+        trainOrderId: 8314,
+        operatingDate: '2026-09-06',
+        trainStatus: 'P',
+        stations: [
+          OperationStation(
+            stationId: 10, // Szczecin
+            actualSequenceNumber: 1,
+            actualDeparture: '2026-09-06T06:42:00',
+            isConfirmed: true,
+            isCancelled: false,
+            raw: {},
+          ),
+          OperationStation(
+            stationId: 20, // Kędzierzyn
+            actualSequenceNumber: 20,
+            actualArrival: '2026-09-06T12:00:00',
+            actualDeparture: '2026-09-06T12:05:00',
+            isConfirmed: true,
+            isCancelled: false,
+            raw: {},
+          ),
+          OperationStation(
+            stationId: 30, // Przemyśl (future!)
+            actualSequenceNumber: 28,
+            actualArrival: '2026-09-06T16:51:00', // This time is in the future
+            actualDeparture: null,
+            isConfirmed: true, // Suppose API mistakenly returns true or it's a confirmed planned track
+            isCancelled: false,
+            raw: {},
+          ),
+        ],
+        raw: {},
+      );
+
+      final pos = TrainPositionInfo.compute(
+        operation: op,
+        routeStations: [
+          StationOnRoute(stationId: 10, orderNumber: 1, raw: {}),
+          StationOnRoute(stationId: 20, orderNumber: 20, raw: {}),
+          StationOnRoute(stationId: 30, orderNumber: 28, raw: {}),
+        ],
+        stationNames: {10: 'Szczecin', 20: 'Kędzierzyn-Koźle', 30: 'Przemyśl Główny'},
+        nowOverride: DateTime.parse('2026-09-06T12:20:00'), // Current time is 12:20
+      );
+
+      expect(pos.currentStationId, 20); // Should stop at Kędzierzyn-Koźle
+      expect(pos.nextStationId, 30);
+      expect(pos.description, contains('Kędzierzyn-Koźle'));
+      expect(pos.description, isNot(contains('Przemyśl Główny (odjazd'))); // Przemyśl is not the last station
     });
   });
 

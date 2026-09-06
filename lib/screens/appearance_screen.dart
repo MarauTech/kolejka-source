@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../app_state.dart';
-import 'permissions_screen.dart';
-import 'data_source_screen.dart';
 
-class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({super.key});
+class AppearanceScreen extends StatelessWidget {
+  const AppearanceScreen({super.key});
 
   void _showThemeDialog(BuildContext context, AppState appState) {
     showDialog(
@@ -71,17 +69,16 @@ class SettingsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Ustawienia',
+        title: const Text('Wygląd',
             style: TextStyle(fontWeight: FontWeight.bold)),
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
-          // Section: Wygląd
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text(
-              'WYGLĄD',
+              'MOTYW I WYŚWIETLANIE',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
@@ -97,65 +94,6 @@ class SettingsScreen extends StatelessWidget {
             subtitle: Text(_themeModeLabel(appState.themeMode)),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _showThemeDialog(context, appState),
-          ),
-
-          const SizedBox(height: 12),
-          // Section: Uprawnienia
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text(
-              'UPRAWNIENIA',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: theme.colorScheme.primary,
-                letterSpacing: 0.8,
-              ),
-            ),
-          ),
-          ListTile(
-            leading: Icon(Icons.location_on_outlined,
-                color: theme.colorScheme.primary),
-            title: const Text('Uprawnienia lokalizacji'),
-            subtitle:
-                const Text('Sprawdź status dostępu do GPS i zmień uprawnienia'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (context) => const PermissionsScreen()),
-              );
-            },
-          ),
-
-          const SizedBox(height: 12),
-          // Section: Dane i sieć
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text(
-              'DANE I SIEĆ',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: theme.colorScheme.primary,
-                letterSpacing: 0.8,
-              ),
-            ),
-          ),
-          ListTile(
-            leading: Icon(Icons.dns_outlined, color: theme.colorScheme.primary),
-            title: const Text('Usługa i źródło danych'),
-            subtitle: const Text(
-                'Status API PKP PLK, wersje rozkładu i limity zapytań'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (context) => const DataSourceScreen()),
-              );
-            },
           ),
         ],
       ),

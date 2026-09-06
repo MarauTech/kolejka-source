@@ -385,6 +385,7 @@ class TrainPositionInfo {
     required TrainOperation? operation,
     required List<StationOnRoute> routeStations,
     required Map<int, String> stationNames,
+    DateTime? nowOverride,
   }) {
     if (operation == null) {
       return TrainPositionInfo(
@@ -422,42 +423,72 @@ class TrainPositionInfo {
       );
     }
 
-    // Train is in progress ('P') - inspect stations
-    OperationStation? lastConfirmed;
-    OperationStation? nextStation;
+    // Train is in progress ('P') or fallback
+    final now = nowOverride ?? DateTime.now();
 
-    for (int i = 0; i < operation.stations.length; i++) {
-      final st = operation.stations[i];
-      final isConfirmed = st.isConfirmed || st.actualArrival != null || st.actualDeparture != null;
+    StationOnRoute? lastReachedStation;
+    OperationStation? lastReachedOp;
+    StationOnRoute? nextStation;
 
-      if (isConfirmed) {
-        lastConfirmed = st;
-      } else if (lastConfirmed != null && nextStation == null) {
-        nextStation = st;
+    // Loop through the FULL planned route to ensure proper order
+    for (int i = 0; i < routeStations.length; i++) {
+      final plannedStation = routeStations[i];
+      
+      // Find matching operation station
+      OperationStation? opSt;
+      try {
+        opSt = operation.stations.firstWhere(
+            (s) => s.stationId == plannedStation.stationId);
+      } catch (_) {}
+
+      if (opSt != null) {
+        final actualDepDt = app_date.parsePdpDateTime(opSt.actualDeparture);
+        final actualArrDt = app_date.parsePdpDateTime(opSt.actualArrival);
+        
+        bool isReached = false;
+        
+        if (actualDepDt != null && actualDepDt.isBefore(now) || actualDepDt?.isAtSameMomentAs(now) == true) {
+          isReached = true;
+        } else if (actualArrDt != null && actualArrDt.isBefore(now) || actualArrDt?.isAtSameMomentAs(now) == true) {
+          isReached = true;
+        }
+
+        if (isReached) {
+          lastReachedStation = plannedStation;
+          lastReachedOp = opSt;
+        } else if (lastReachedStation != null && nextStation == null) {
+          // The first station in the planned route that is NOT reached after lastReached
+          nextStation = plannedStation;
+        }
+      } else {
+        // No operation data for this planned station
+        if (lastReachedStation != null && nextStation == null) {
+          nextStation = plannedStation;
+        }
       }
     }
 
-    if (lastConfirmed != null) {
-      final stName = stationNames[lastConfirmed.stationId] ?? 'stacji';
+    if (lastReachedStation != null && lastReachedOp != null) {
+      final stName = stationNames[lastReachedStation.stationId] ?? 'stacji';
       final nextName = nextStation != null ? (stationNames[nextStation.stationId] ?? 'kolejnej stacji') : 'końca trasy';
       
       String timeStr = '';
-      if (lastConfirmed.actualDeparture != null) {
-        final t = DateTime.tryParse(lastConfirmed.actualDeparture!)?.toLocal();
-        if (t != null) timeStr = ' (odjazd ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')})';
-      } else if (lastConfirmed.actualArrival != null) {
-        final t = DateTime.tryParse(lastConfirmed.actualArrival!)?.toLocal();
-        if (t != null) timeStr = ' (przyjazd ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')})';
+      if (lastReachedOp.actualDeparture != null && app_date.parsePdpDateTime(lastReachedOp.actualDeparture) != null) {
+        final t = app_date.parsePdpDateTime(lastReachedOp.actualDeparture)!;
+        timeStr = ' (odjazd ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')})';
+      } else if (lastReachedOp.actualArrival != null && app_date.parsePdpDateTime(lastReachedOp.actualArrival) != null) {
+        final t = app_date.parsePdpDateTime(lastReachedOp.actualArrival)!;
+        timeStr = ' (przyjazd ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')})';
       }
 
       return TrainPositionInfo(
         type: TrainStatusType.betweenStations,
         description: 'Ostatnia stacja: $stName$timeStr\nNastępna: $nextName',
-        currentStationId: lastConfirmed.stationId,
+        currentStationId: lastReachedStation.stationId,
         currentStationName: stName,
         nextStationId: nextStation?.stationId,
         nextStationName: nextStation != null ? stationNames[nextStation.stationId] : null,
-        lastVisitedOrderNumber: lastConfirmed.actualSequenceNumber,
+        lastVisitedOrderNumber: lastReachedStation.orderNumber,
       );
     }
 

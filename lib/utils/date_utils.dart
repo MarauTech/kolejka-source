@@ -23,15 +23,30 @@ String formatTimeSpan(String? timeSpan) {
   return '--:--';
 }
 
+/// Helper to parse PDP timestamps consistently without incorrect timezone shifts
+DateTime? parsePdpDateTime(String? dateTimeStr) {
+  if (dateTimeStr == null || dateTimeStr.isEmpty) return null;
+  try {
+    // PDP returns times like "2026-09-06T16:51:00" (no 'Z' and no offset).
+    // DateTime.parse will treat this as local time by default.
+    // That means it's already in the "same" timezone if device is in Poland.
+    // Just parse it and avoid .toLocal() which might shift if it was UTC.
+    var parsed = DateTime.parse(dateTimeStr);
+    if (parsed.isUtc) {
+      // If it accidentally got parsed as UTC (e.g. string had Z), convert to local
+      parsed = parsed.toLocal();
+    }
+    return parsed;
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Parse ISO 8601 datetime string and format as HH:mm
 String formatDateTime(String? dateTimeStr) {
-  if (dateTimeStr == null || dateTimeStr.isEmpty) return '--:--';
-  try {
-    final dt = DateTime.parse(dateTimeStr).toLocal();
-    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-  } catch (_) {
-    return '--:--';
-  }
+  final dt = parsePdpDateTime(dateTimeStr);
+  if (dt == null) return '--:--';
+  return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 }
 
 /// Parse ISO 8601 datetime string and format as dd.MM.yyyy

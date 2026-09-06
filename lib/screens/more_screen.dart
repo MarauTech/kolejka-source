@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'disruptions_screen.dart';
 import 'statistics_screen.dart';
-import 'settings_screen.dart';
+import 'appearance_screen.dart';
 import 'permissions_screen.dart';
 import 'data_source_screen.dart';
 import 'about_screen.dart';
@@ -44,7 +44,7 @@ class MoreScreen extends StatelessWidget {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const SettingsScreen()),
+                MaterialPageRoute(builder: (context) => const AppearanceScreen()),
               );
             },
           ),

@@ -171,12 +171,37 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
     final isCancelled =
         _operation?.trainStatus == 'X' || widget.result.isCancelled;
 
+    String relStart = widget.result.relationStart;
+    String relEnd = widget.result.relationEnd;
+
+    if (route.stations.isNotEmpty) {
+      relStart = appState.getStationName(route.stations.first.stationId);
+      relEnd = appState.getStationName(route.stations.last.stationId);
+    }
+
     // Compute live train position
     final positionInfo = TrainPositionInfo.compute(
       operation: _operation,
       routeStations: route.stations,
       stationNames: appState.stationNames,
     );
+    
+    // DEBUG LOGS
+    debugPrint('[PDP ROUTE] origin: $relStart');
+    debugPrint('[PDP ROUTE] destination: $relEnd');
+    debugPrint('[PDP OP] trainStatus: ${_operation?.trainStatus}');
+    if (_operation != null && _operation!.stations.isNotEmpty) {
+      final debugSt = _operation!.stations.last;
+      debugPrint('[PDP OP] station: ${debugSt.stationId}');
+      debugPrint('[PDP OP] plannedArrival: (n/a directly in op)');
+      debugPrint('[PDP OP] plannedDeparture: (n/a directly in op)');
+      debugPrint('[PDP OP] actualArrival: ${debugSt.actualArrival}');
+      debugPrint('[PDP OP] actualDeparture: ${debugSt.actualDeparture}');
+      debugPrint('[PDP OP] isConfirmed: ${debugSt.isConfirmed}');
+      debugPrint('[PDP OP] isCancelled: ${debugSt.isCancelled}');
+    }
+    debugPrint('[PDP OP] selected lastReached: ${positionInfo.currentStationName}');
+    debugPrint('[PDP OP] selected nextStation: ${positionInfo.nextStationName}');
 
     // Identify user segment indices if available
     int userFromIdx = -1;
@@ -258,7 +283,7 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
                         children: [
                           Expanded(
                             child: Text(
-                              'Relacja: ${widget.result.relationStart} - ${widget.result.relationEnd}',
+                              'Relacja: $relStart - $relEnd',
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,
