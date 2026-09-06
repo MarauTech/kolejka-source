@@ -1,424 +1,267 @@
 import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../utils/date_utils.dart' as app_date;
+import '../utils/format_utils.dart';
 
+/// One row in a continuous railway route: times, axis, station, platform.
 class RouteStopWidget extends StatelessWidget {
   final String stationName;
   final StationOnRoute scheduleData;
   final OperationStation? realtimeData;
   final bool isFirst;
   final bool isLast;
-  final bool isHighlighted; // User's travel segment (from/to)
-  final bool isPassed; // Already departed
-  final bool hasTrainNow; // Train currently at this station
-  final bool isBetweenNext; // Train currently between this stop and next
+  final bool isHighlighted;
+  final bool isPassed;
+  final bool hasTrainNow;
+  final bool isBetweenNext;
+  final int index;
+  final bool isTrainAtPrevious;
+  final String operatingDate;
+  final String? notice;
+  final bool startsVisibleRoute;
 
-  const RouteStopWidget({
-    super.key,
-    required this.stationName,
-    required this.scheduleData,
-    this.realtimeData,
-    this.isFirst = false,
-    this.isLast = false,
-    this.isHighlighted = false,
-    this.isPassed = false,
-    this.hasTrainNow = false,
-    this.isBetweenNext = false,
-  });
+  const RouteStopWidget(
+      {super.key,
+      required this.stationName,
+      required this.scheduleData,
+      this.realtimeData,
+      this.isFirst = false,
+      this.isLast = false,
+      this.isHighlighted = false,
+      this.isPassed = false,
+      this.hasTrainNow = false,
+      this.isBetweenNext = false,
+      this.isTrainAtPrevious = false,
+      this.operatingDate = '',
+      this.notice,
+      this.startsVisibleRoute = false,
+      required this.index});
 
-  Widget _buildDelay(int? delay) {
-    if (delay == null || delay == 0) {
-      return const Text(
-        'Planowo',
-        style: TextStyle(
-            color: Colors.green, fontSize: 12, fontWeight: FontWeight.w600),
-      );
-    }
-    if (delay <= 10) {
-      return Text(
-        '+$delay min',
-        style: const TextStyle(
-            color: Colors.orange, fontSize: 12, fontWeight: FontWeight.w600),
-      );
-    }
-    return Text(
-      '+$delay min',
-      style: const TextStyle(
-          color: Colors.red, fontSize: 12, fontWeight: FontWeight.w600),
+  bool _hasTime(String? planned, String? actual) =>
+      app_date.formatTimeSafe(actual) != '--:--' ||
+      app_date.formatTimeSafe(planned) != '--:--';
+
+  Widget _time(bool arrival, ThemeData theme) {
+    final planned = arrival
+        ? realtimeData?.plannedArrival ?? scheduleData.arrivalTime
+        : realtimeData?.plannedDeparture ?? scheduleData.departureTime;
+    final actual =
+        arrival ? realtimeData?.actualArrival : realtimeData?.actualDeparture;
+    final reported = arrival
+        ? realtimeData?.arrivalDelayMinutes
+        : realtimeData?.departureDelayMinutes;
+    final delay = app_date.timeDelay(planned, actual, reported,
+        operatingDate: operatingDate,
+        day: arrival ? scheduleData.arrivalDay : scheduleData.departureDay);
+    final display = app_date.delayedTime(planned, actual, delay);
+    final delayKnown = reported != null ||
+        (app_date.parsePdpDateTime(actual) != null &&
+            app_date.scheduleDateTime(planned, operatingDate,
+                    day: arrival
+                        ? scheduleData.arrivalDay
+                        : scheduleData.departureDay) !=
+                null);
+    final suffix = delay >= 0 ? '+$delay' : '$delay';
+    final color = delay > 0 ? Colors.red : theme.colorScheme.onSurface;
+    final label = arrival ? 'Przyjazd' : 'Odjazd';
+    return Semantics(
+      label: delayKnown
+          ? '$label $display, opóźnienie $delay minut'
+          : '$label $display według rozkładu',
+      child: Tooltip(
+        message: '$label · Planowo ${app_date.formatTimeSafe(planned)}',
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 1),
+          child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(display,
+                        key: ValueKey(
+                            'route-time-$index-${arrival ? 'arrival' : 'departure'}'),
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: color,
+                            fontFeatures: const [
+                              FontFeature.tabularFigures()
+                            ])),
+                    if (delayKnown) ...[
+                      const SizedBox(width: 4),
+                      Text(suffix,
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: delay > 0
+                                  ? Colors.red
+                                  : theme.brightness == Brightness.dark
+                                      ? const Color(0xFF83C998)
+                                      : const Color(0xFF26743D))),
+                    ],
+                  ])),
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final primaryColor = theme.colorScheme.primary;
+    final active = hasTrainNow || isBetweenNext || isHighlighted;
+    final foreground = theme.colorScheme.onSurface;
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final primary = theme.colorScheme.primary;
+    final normalLine = theme.colorScheme.outline;
+    final pastLine = theme.colorScheme.outlineVariant;
+    final topLine = isBetweenNext
+        ? primary
+        : isPassed
+            ? pastLine
+            : normalLine;
+    final bottomLine = (hasTrainNow || isTrainAtPrevious)
+        ? primary
+        : isPassed
+            ? pastLine
+            : normalLine;
+    final platform = formatPlatformTrack(
+        realtimeData?.platform ??
+            (isLast
+                ? scheduleData.arrivalPlatform ?? scheduleData.departurePlatform
+                : scheduleData.departurePlatform ??
+                    scheduleData.arrivalPlatform),
+        realtimeData?.track ??
+            (isLast
+                ? scheduleData.arrivalTrack ?? scheduleData.departureTrack
+                : scheduleData.departureTrack ?? scheduleData.arrivalTrack),
+        compact: true);
+    final arrival = _hasTime(
+        realtimeData?.plannedArrival ?? scheduleData.arrivalTime,
+        realtimeData?.actualArrival);
+    final departure = _hasTime(
+        realtimeData?.plannedDeparture ?? scheduleData.departureTime,
+        realtimeData?.actualDeparture);
+    final showArrival = arrival && (!isFirst || !departure || isLast);
+    final showDeparture = departure && (!isLast || !arrival);
+    final dotSize = active ? 9.0 : 7.0;
 
-    final arrTime = scheduleData.arrivalTime != null
-        ? app_date.formatTimeSpan(scheduleData.arrivalTime!)
-        : '-';
-    final depTime = scheduleData.departureTime != null
-        ? app_date.formatTimeSpan(scheduleData.departureTime!)
-        : '-';
-
-    final realArrTime = realtimeData?.actualArrival != null
-        ? app_date.formatDateTime(realtimeData!.actualArrival!)
-        : arrTime;
-    final realDepTime = realtimeData?.actualDeparture != null
-        ? app_date.formatDateTime(realtimeData!.actualDeparture!)
-        : depTime;
-
-    final isCancelled = realtimeData?.isCancelled ?? false;
-    final stopType = scheduleData.stopTypeName ?? '';
-
-    // Platform and track
-    final platform = realtimeData?.platform ??
-        scheduleData.arrivalPlatform ??
-        scheduleData.departurePlatform;
-    final track = realtimeData?.track ??
-        scheduleData.arrivalTrack ??
-        scheduleData.departureTrack;
-
-    Color timelineColor = isPassed
-        ? theme.colorScheme.outlineVariant
-        : (isHighlighted ? primaryColor : theme.colorScheme.outline);
-
-    Color dotColor = isCancelled
-        ? Colors.red
-        : (hasTrainNow
-            ? primaryColor
-            : (isPassed
-                ? theme.colorScheme.outlineVariant
-                : (isHighlighted || isFirst || isLast
-                    ? primaryColor
-                    : theme.colorScheme.secondary)));
-
-    return Container(
-      color: isHighlighted
-          ? primaryColor.withValues(alpha: 0.08)
-          : (hasTrainNow
-              ? primaryColor.withValues(alpha: 0.04)
-              : Colors.transparent),
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Timeline track column
-            SizedBox(
-              width: 36,
+    return IntrinsicHeight(
+        child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      SizedBox(
+          width: 82,
+          child: Padding(
+              padding: const EdgeInsets.only(top: 12, right: 3, bottom: 12),
               child: Column(
-                children: [
-                  Expanded(
-                    child: Container(
-                      width: 3,
-                      color: isFirst ? Colors.transparent : timelineColor,
-                    ),
-                  ),
-                  if (hasTrainNow)
-                    Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: primaryColor,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: primaryColor.withValues(alpha: 0.4),
-                            blurRadius: 6,
-                            spreadRadius: 2,
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.train,
-                        size: 14,
-                        color: Colors.white,
-                      ),
-                    )
-                  else
-                    Container(
-                      width: isHighlighted ? 18 : 14,
-                      height: isHighlighted ? 18 : 14,
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      decoration: BoxDecoration(
-                        color: isPassed ? theme.colorScheme.surface : dotColor,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: dotColor,
-                          width: isPassed ? 2.5 : 2,
-                        ),
-                      ),
-                    ),
-                  Expanded(
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Container(
-                          width: 3,
-                          color: isLast
-                              ? Colors.transparent
-                              : (isPassed
-                                  ? theme.colorScheme.outlineVariant
-                                  : timelineColor),
-                        ),
-                        if (isBetweenNext)
-                          Container(
-                            padding: const EdgeInsets.all(2),
-                            decoration: BoxDecoration(
-                              color: primaryColor,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.arrow_downward,
-                              size: 10,
-                              color: Colors.white,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-
-            // Station details
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12.0),
-                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Station Name & Platform info
+                    if (showArrival) _time(true, theme),
+                    if (showDeparture) _time(false, theme),
+                  ]))),
+      SizedBox(
+          width: 20,
+          key: ValueKey('route-axis-$index'),
+          child: Stack(alignment: Alignment.topCenter, children: [
+            if (!isFirst && !startsVisibleRoute)
+              Positioned(
+                  top: 0,
+                  height: 21,
+                  child: Container(width: 1.5, color: topLine)),
+            if (!isLast)
+              Positioned(
+                  top: 21,
+                  bottom: 0,
+                  child: Container(width: 1.5, color: bottomLine)),
+            Positioned(
+                top: 21 - dotSize / 2,
+                child: Container(
+                    width: dotSize,
+                    height: dotSize,
+                    decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: active ? primary : theme.colorScheme.surface,
+                        border: Border.all(
+                            color: active
+                                ? primary
+                                : isPassed
+                                    ? pastLine
+                                    : normalLine,
+                            width: 1.5)))),
+          ])),
+      Expanded(
+          child: Container(
+              padding: const EdgeInsets.only(top: 11, bottom: 12, left: 5),
+              decoration: BoxDecoration(
+                  border: isLast
+                      ? null
+                      : Border(
+                          bottom: BorderSide(
+                              color: theme.colorScheme.outlineVariant
+                                  .withValues(alpha: 0.35),
+                              width: 0.5))),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            stationName,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: isHighlighted
-                                  ? FontWeight.bold
-                                  : ((isFirst || isLast || hasTrainNow)
-                                      ? FontWeight.bold
-                                      : FontWeight.w600),
-                              color: isPassed
-                                  ? theme.colorScheme.onSurface
-                                      .withValues(alpha: 0.45)
-                                  : (isHighlighted
-                                      ? primaryColor
-                                      : theme.colorScheme.onSurface),
-                              decoration: isCancelled
-                                  ? TextDecoration.lineThrough
-                                  : null,
-                            ),
-                          ),
-                        ),
-                        if (platform != null && platform.isNotEmpty)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            margin: const EdgeInsets.only(left: 4),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              'Peron $platform${(track != null && track.isNotEmpty) ? ' / Tor $track' : ''}',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                              child: Text(stationName,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      height: 1.3,
+                                      fontWeight: active || isLast
+                                          ? FontWeight.w700
+                                          : FontWeight.w500,
+                                      color: active
+                                          ? primary
+                                          : isPassed
+                                              ? muted
+                                              : foreground))),
+                          if (platform != null) ...[
+                            const SizedBox(width: 6),
+                            SizedBox(
+                                width: 64,
+                                child: Text(platform,
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        height: 1.6,
+                                        color: muted))),
+                          ],
+                        ]),
                     if (hasTrainNow)
                       Padding(
-                        padding: const EdgeInsets.only(top: 4.0),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.location_on,
-                                size: 13, color: primaryColor),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Pociąg aktualnie na stacji',
-                              style: TextStyle(
-                                color: primaryColor,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                    if (isBetweenNext)
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text('Pociąg na stacji',
+                              style: TextStyle(fontSize: 11, color: primary))),
+                    if (notice != null && notice!.trim().isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(top: 4.0),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.directions_train,
-                                size: 13, color: primaryColor),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Pociąg w drodze do następnej stacji',
-                              style: TextStyle(
-                                color: primaryColor,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                    if (stopType.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        stopType,
-                        style: TextStyle(
-                          color: isPassed
-                              ? theme.colorScheme.onSurface
-                                  .withValues(alpha: 0.35)
-                              : theme.colorScheme.onSurfaceVariant,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-
-                    if (isCancelled)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 4.0),
-                        child: Text(
-                          'Postój odwołany',
-                          style: TextStyle(
-                              color: Colors.red,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500),
-                        ),
-                      ),
-
-                    const SizedBox(height: 6),
-
-                    // Arrival Time row
-                    if (!isFirst && scheduleData.arrivalTime != null)
-                      Row(
-                        children: [
-                          SizedBox(
-                            width: 62,
-                            child: Text(
-                              'Przyjazd:',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: isPassed
-                                    ? theme.colorScheme.onSurface
-                                        .withValues(alpha: 0.35)
-                                    : theme.colorScheme.outline,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            arrTime,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isPassed
-                                  ? theme.colorScheme.onSurface
-                                      .withValues(alpha: 0.45)
-                                  : theme.colorScheme.onSurface,
-                              decoration:
-                                  (arrTime != realArrTime && realArrTime != '-')
-                                      ? TextDecoration.lineThrough
-                                      : null,
-                            ),
-                          ),
-                          if (arrTime != realArrTime && realArrTime != '-') ...[
-                            const SizedBox(width: 6),
-                            Text(
-                              realArrTime,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: isPassed
-                                    ? theme.colorScheme.onSurface
-                                        .withValues(alpha: 0.45)
-                                    : theme.colorScheme.onSurface,
-                              ),
-                            ),
-                          ],
-                          const SizedBox(width: 8),
-                          if (!isPassed)
-                            _buildDelay(realtimeData?.arrivalDelayMinutes),
-                        ],
-                      ),
-
-                    // Departure Time row
-                    if (!isLast && scheduleData.departureTime != null)
-                      Padding(
-                        padding: EdgeInsets.only(
-                            top: (!isFirst && scheduleData.arrivalTime != null)
-                                ? 4.0
-                                : 0),
-                        child: Row(
-                          children: [
-                            SizedBox(
-                              width: 62,
-                              child: Text(
-                                'Odjazd:',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: isPassed
-                                      ? theme.colorScheme.onSurface
-                                          .withValues(alpha: 0.35)
-                                      : theme.colorScheme.outline,
-                                ),
-                              ),
-                            ),
-                            Text(
-                              depTime,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: isPassed
-                                    ? theme.colorScheme.onSurface
-                                        .withValues(alpha: 0.45)
-                                    : theme.colorScheme.onSurface,
-                                decoration: (depTime != realDepTime &&
-                                        realDepTime != '-')
-                                    ? TextDecoration.lineThrough
-                                    : null,
-                              ),
-                            ),
-                            if (depTime != realDepTime &&
-                                realDepTime != '-') ...[
-                              const SizedBox(width: 6),
-                              Text(
-                                realDepTime,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: isPassed
-                                      ? theme.colorScheme.onSurface
-                                          .withValues(alpha: 0.45)
-                                      : theme.colorScheme.onSurface,
-                                ),
-                              ),
-                            ],
-                            const SizedBox(width: 8),
-                            if (!isPassed)
-                              _buildDelay(realtimeData?.departureDelayMinutes),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+                          padding: const EdgeInsets.only(top: 8, right: 2),
+                          child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                  color: theme.colorScheme.primary
+                                      .withValues(alpha: 0.07),
+                                  borderRadius: BorderRadius.circular(4)),
+                              child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(Icons.info_outline,
+                                        size: 13, color: muted),
+                                    const SizedBox(width: 5),
+                                    Expanded(
+                                        child: Text(notice!,
+                                            style: TextStyle(
+                                                fontSize: 11,
+                                                height: 1.4,
+                                                color: muted))),
+                                  ]))),
+                  ]))),
+    ]));
   }
 }

@@ -48,3 +48,23 @@ android/local.properties
 # Node / Worker
 worker/node_modules/
 worker/.wrangler/
+
+# Generated files and private release material
+**/node_modules/
+android/.gradle/
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+build_old_*/
+.private/
+.publication/
+artifacts/
+android/key.properties
+*.jks
+*.keystore
+.env
+.env.*
+!.env.example
+**/.wrangler/
+website/out/
+website/dist/
+website/.vite/
+website/.git/

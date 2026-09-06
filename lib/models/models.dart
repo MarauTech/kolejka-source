@@ -1,4 +1,5 @@
 import '../utils/date_utils.dart' as app_date;
+import 'station_mapping.dart';
 
 /// Station from /api/v1/dictionaries/stations
 class Station {
@@ -350,155 +351,6 @@ class TrainOperation {
   Map<String, dynamic> toJson() => raw;
 }
 
-/// Enum for Train Position status
-enum TrainStatusType {
-  notStarted,
-  inProgress,
-  atStation,
-  betweenStations,
-  completed,
-  cancelled,
-  partialCancelled,
-}
-
-/// Real-time train position indicator on the route
-class TrainPositionInfo {
-  final TrainStatusType type;
-  final String description;
-  final int? currentStationId;
-  final String? currentStationName;
-  final int? nextStationId;
-  final String? nextStationName;
-  final int lastVisitedOrderNumber;
-
-  TrainPositionInfo({
-    required this.type,
-    required this.description,
-    this.currentStationId,
-    this.currentStationName,
-    this.nextStationId,
-    this.nextStationName,
-    this.lastVisitedOrderNumber = 0,
-  });
-
-  static TrainPositionInfo compute({
-    required TrainOperation? operation,
-    required List<StationOnRoute> routeStations,
-    required Map<int, String> stationNames,
-    DateTime? nowOverride,
-  }) {
-    if (operation == null) {
-      return TrainPositionInfo(
-        type: TrainStatusType.notStarted,
-        description: 'Brak danych o bieżącym kursie',
-      );
-    }
-
-    if (operation.trainStatus == 'X') {
-      return TrainPositionInfo(
-        type: TrainStatusType.cancelled,
-        description: 'Pociąg odwołany',
-      );
-    }
-
-    if (operation.trainStatus == 'Q') {
-      return TrainPositionInfo(
-        type: TrainStatusType.partialCancelled,
-        description: 'Pociąg częściowo odwołany',
-      );
-    }
-
-    if (operation.trainStatus == 'S') {
-      return TrainPositionInfo(
-        type: TrainStatusType.notStarted,
-        description: 'Jeszcze nie rozpoczął kursu',
-      );
-    }
-
-    if (operation.trainStatus == 'C') {
-      return TrainPositionInfo(
-        type: TrainStatusType.completed,
-        description: 'Kurs zakończony',
-        lastVisitedOrderNumber: routeStations.length,
-      );
-    }
-
-    // Train is in progress ('P') or fallback
-    final now = nowOverride ?? DateTime.now();
-
-    StationOnRoute? lastReachedStation;
-    OperationStation? lastReachedOp;
-    StationOnRoute? nextStation;
-
-    // Loop through the FULL planned route to ensure proper order
-    for (int i = 0; i < routeStations.length; i++) {
-      final plannedStation = routeStations[i];
-      
-      // Find matching operation station
-      OperationStation? opSt;
-      try {
-        opSt = operation.stations.firstWhere(
-            (s) => s.stationId == plannedStation.stationId);
-      } catch (_) {}
-
-      if (opSt != null) {
-        final actualDepDt = app_date.parsePdpDateTime(opSt.actualDeparture);
-        final actualArrDt = app_date.parsePdpDateTime(opSt.actualArrival);
-        
-        bool isReached = false;
-        
-        if (actualDepDt != null && actualDepDt.isBefore(now) || actualDepDt?.isAtSameMomentAs(now) == true) {
-          isReached = true;
-        } else if (actualArrDt != null && actualArrDt.isBefore(now) || actualArrDt?.isAtSameMomentAs(now) == true) {
-          isReached = true;
-        }
-
-        if (isReached) {
-          lastReachedStation = plannedStation;
-          lastReachedOp = opSt;
-        } else if (lastReachedStation != null && nextStation == null) {
-          // The first station in the planned route that is NOT reached after lastReached
-          nextStation = plannedStation;
-        }
-      } else {
-        // No operation data for this planned station
-        if (lastReachedStation != null && nextStation == null) {
-          nextStation = plannedStation;
-        }
-      }
-    }
-
-    if (lastReachedStation != null && lastReachedOp != null) {
-      final stName = stationNames[lastReachedStation.stationId] ?? 'stacji';
-      final nextName = nextStation != null ? (stationNames[nextStation.stationId] ?? 'kolejnej stacji') : 'końca trasy';
-      
-      String timeStr = '';
-      if (lastReachedOp.actualDeparture != null && app_date.parsePdpDateTime(lastReachedOp.actualDeparture) != null) {
-        final t = app_date.parsePdpDateTime(lastReachedOp.actualDeparture)!;
-        timeStr = ' (odjazd ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')})';
-      } else if (lastReachedOp.actualArrival != null && app_date.parsePdpDateTime(lastReachedOp.actualArrival) != null) {
-        final t = app_date.parsePdpDateTime(lastReachedOp.actualArrival)!;
-        timeStr = ' (przyjazd ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')})';
-      }
-
-      return TrainPositionInfo(
-        type: TrainStatusType.betweenStations,
-        description: 'Ostatnia stacja: $stName$timeStr\nNastępna: $nextName',
-        currentStationId: lastReachedStation.stationId,
-        currentStationName: stName,
-        nextStationId: nextStation?.stationId,
-        nextStationName: nextStation != null ? stationNames[nextStation.stationId] : null,
-        lastVisitedOrderNumber: lastReachedStation.orderNumber,
-      );
-    }
-
-    return TrainPositionInfo(
-      type: TrainStatusType.inProgress,
-      description: 'W trasie',
-    );
-  }
-}
-
 /// Operation statistics from /api/v1/operations/statistics
 class OperationStatistics {
   final String? generatedAt;
@@ -561,16 +413,24 @@ class Disruption {
   });
 
   factory Disruption.fromJson(Map<String, dynamic> json) {
+    final seen = <String>{};
+    final affected = <Map<String, dynamic>>[];
+    for (final value in json['affectedRoutes'] as List<dynamic>? ?? []) {
+      final ref = value as Map<String, dynamic>;
+      final sid = ref['scheduleId'] ?? ref['sid'];
+      final oid = ref['orderId'] ?? ref['oid'];
+      final key =
+          '$sid/$oid/${ref['trainOrderId'] ?? ref['toid'] ?? oid}/${ref['operatingDate'] ?? ref['od']}';
+      // The API may report the same train at several affected stations.
+      if (sid == null || oid == null || seen.add(key)) affected.add(ref);
+    }
     return Disruption(
       disruptionId: (json['disruptionId'] as num?)?.toInt() ?? 0,
       disruptionTypeCode: json['disruptionTypeCode'] as String?,
       startStationId: json['startStationId'] as int?,
       endStationId: json['endStationId'] as int?,
       message: json['message'] as String?,
-      affectedRoutes: (json['affectedRoutes'] as List<dynamic>?)
-              ?.map((e) => e as Map<String, dynamic>)
-              .toList() ??
-          [],
+      affectedRoutes: affected,
       raw: json,
     );
   }
@@ -606,6 +466,7 @@ class DataVersion {
 class StationBoardItem {
   final String time; // HH:mm or TimeSpan
   final String trainNumber;
+  final String trainName;
   final String trainCategory;
   final String carrier;
   final String direction; // Destination for departure, Origin for arrival
@@ -624,6 +485,7 @@ class StationBoardItem {
   StationBoardItem({
     required this.time,
     required this.trainNumber,
+    this.trainName = '',
     required this.trainCategory,
     required this.carrier,
     required this.direction,
@@ -704,29 +566,34 @@ class ConnectionResult {
   }
 
   String get duration {
+    if (departureTime.contains('T') && arrivalTime.contains('T')) {
+      return app_date.calculateTravelTimeFromDateTime(
+          departureTime, arrivalTime);
+    }
     return app_date.calculateTravelTime(departureTime, arrivalTime);
   }
 
   int get departureDelay {
-    if (operation != null) {
-      for (final st in operation!.stations) {
-        if (st.stationId == fromStop.stationId) {
-          return st.departureDelayMinutes ?? 0;
-        }
-      }
-    }
-    return 0;
+    final stop =
+        operationForStop(fromStop, route.stations, operation?.stations ?? []);
+    return app_date.timeDelay(stop?.plannedDeparture ?? fromStop.departureTime,
+        stop?.actualDeparture, stop?.departureDelayMinutes,
+        operatingDate: operatingDate.isNotEmpty
+            ? operatingDate
+            : operation?.operatingDate ?? '',
+        day: fromStop.departureDay);
   }
 
   int get arrivalDelay {
-    if (operation != null) {
-      for (final st in operation!.stations) {
-        if (st.stationId == toStop.stationId) {
-          return st.arrivalDelayMinutes ?? 0;
-        }
-      }
-    }
-    return 0;
+    if (secondLeg != null) return secondLeg!.arrivalDelay;
+    final stop =
+        operationForStop(toStop, route.stations, operation?.stations ?? []);
+    return app_date.timeDelay(stop?.plannedArrival ?? toStop.arrivalTime,
+        stop?.actualArrival, stop?.arrivalDelayMinutes,
+        operatingDate: operatingDate.isNotEmpty
+            ? operatingDate
+            : operation?.operatingDate ?? '',
+        day: toStop.arrivalDay);
   }
 
   int get delay =>

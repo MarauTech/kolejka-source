@@ -1,0 +1,4 @@
+﻿storePassword=REPLACE_LOCALLY
+keyPassword=REPLACE_LOCALLY
+keyAlias=kolejka
+storeFile=../../.private/kolejka-release.jks

@@ -153,3 +153,53 @@ String formatDelay(int? delayMinutes) {
   if (delayMinutes > 0) return '+$delayMinutes min';
   return '$delayMinutes min';
 }
+
+/// Safely format any time string (HH:mm, HH:mm:ss, ISO8601, TimeSpan) to HH:mm without RangeError.
+String formatTimeSafe(String? timeStr) {
+  if (timeStr == null || timeStr.trim().isEmpty) return '--:--';
+  final s = timeStr.trim();
+
+  // If it is an ISO datetime string like "2026-09-06T12:30:00"
+  if (s.contains('T')) {
+    final dt = parsePdpDateTime(s);
+    if (dt != null) {
+      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    }
+  }
+
+  // Otherwise format as TimeSpan
+  return formatTimeSpan(s);
+}
+
+/// Schedule TimeSpan is relative to the operating day; operations use ISO dates.
+DateTime? scheduleDateTime(String? value, String operatingDate, {int? day}) {
+  if (value == null || value.isEmpty) return null;
+  if (value.contains('T')) return parsePdpDateTime(value);
+  final date = DateTime.tryParse(operatingDate);
+  final minutes = _timeSpanToMinutes(value);
+  if (date == null || minutes == null) return null;
+  return DateTime(date.year, date.month, date.day).add(
+      Duration(days: value.contains('.') ? 0 : (day ?? 0), minutes: minutes));
+}
+
+String delayedTime(String? planned, String? actual, int delay) {
+  if (actual != null && formatTimeSafe(actual) != '--:--') {
+    return formatTimeSafe(actual);
+  }
+  final formatted = formatTimeSafe(planned);
+  if (formatted == '--:--' || delay == 0) return formatted;
+  final parts = formatted.split(':');
+  final time = DateTime(2000, 1, 1, int.parse(parts[0]), int.parse(parts[1]))
+      .add(Duration(minutes: delay));
+  return formatTimeDisplay(time.hour, time.minute);
+}
+
+/// Single-train responses can omit delay fields while providing actual times.
+int timeDelay(String? planned, String? actual, int? reported,
+    {required String operatingDate, int? day}) {
+  if (reported != null) return reported;
+  final expected = scheduleDateTime(planned, operatingDate, day: day);
+  final observed = parsePdpDateTime(actual);
+  if (expected == null || observed == null) return 0;
+  return observed.difference(expected).inMinutes;
+}

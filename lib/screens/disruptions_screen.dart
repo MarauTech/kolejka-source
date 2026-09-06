@@ -1,8 +1,8 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../models/models.dart';
+import '../utils/category_utils.dart';
 
 class DisruptionsScreen extends StatefulWidget {
   const DisruptionsScreen({super.key});
@@ -55,7 +55,7 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = 'Nie udało się pobrać utrudnień: $e';
+          _errorMessage = 'Nie udało się pobrać utrudnień. Spróbuj ponownie.';
         });
       }
     } finally {
@@ -72,11 +72,71 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
     return appState.getStationName(stationId);
   }
 
+  Widget _buildAffectedTrainChip(
+      Map<String, dynamic> ref, AppState appState, ThemeData theme) {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: appState.resolveAffectedTrain(ref),
+      builder: (context, snapshot) {
+        final data = snapshot.data ?? ref;
+        final number = (data['nationalNumber'] ?? data['trainNumber'] ?? '')
+            .toString()
+            .trim();
+        final category = (data['commercialCategorySymbol'] ??
+                data['commercialCategory'] ??
+                '')
+            .toString()
+            .trim();
+        final name =
+            (data['name'] ?? data['trainName'] ?? '').toString().trim();
+        final label = [
+          if (category.isNotEmpty) category,
+          if (number.isNotEmpty) number,
+          if (name.isNotEmpty) name
+        ].join(' ');
+        final dark = theme.brightness == Brightness.dark;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+              color: categoryColor(category, isDark: dark),
+              borderRadius: BorderRadius.circular(6)),
+          child: Text(
+              label.isNotEmpty
+                  ? label
+                  : snapshot.connectionState == ConnectionState.waiting
+                      ? 'Ustalanie numeru pociągu…'
+                      : 'Numer pociągu niedostępny',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: categoryTextColor(category, isDark: dark))),
+        );
+      },
+    );
+  }
+
+  String _typeLabel(Disruption item) {
+    final label = _disruptionTypes[item.disruptionTypeCode]?.trim();
+    if (label == null ||
+        label.isEmpty ||
+        label.length > 80 ||
+        label.contains('{')) {
+      return 'Utrudnienie w ruchu';
+    }
+    return label;
+  }
+
+  String _message(Disruption item) {
+    final message = item.message?.trim() ?? '';
+    if (message.isEmpty ||
+        RegExp(r'^utr_\d+$', caseSensitive: false).hasMatch(message)) {
+      return 'Brak szczegółowego opisu utrudnienia.';
+    }
+    return message;
+  }
+
   void _showDetails(BuildContext context, Disruption item, AppState appState) {
     final theme = Theme.of(context);
-    final typeName = _disruptionTypes[item.disruptionTypeCode] ??
-        item.disruptionTypeCode ??
-        'Utrudnienie w ruchu';
+    final typeName = _typeLabel(item);
     final startName = _getStationName(item.startStationId, appState);
     final endName = _getStationName(item.endStationId, appState);
 
@@ -132,7 +192,6 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
-
                   if (startName.isNotEmpty || endName.isNotEmpty) ...[
                     Card(
                       child: Padding(
@@ -158,61 +217,34 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
                     ),
                     const SizedBox(height: 16),
                   ],
-
                   const Text(
                     'Treść komunikatu:',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    item.message ?? 'Brak szczegółowego komunikatu.',
+                    _message(item),
                     style: const TextStyle(fontSize: 14, height: 1.4),
                   ),
                   const SizedBox(height: 16),
-
                   if (item.affectedRoutes.isNotEmpty) ...[
                     Text(
                       'Dotknięte pociągi (${item.affectedRoutes.length}):',
                       style: const TextStyle(
                           fontWeight: FontWeight.bold, fontSize: 14),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: item.affectedRoutes.take(15).map((r) {
-                        final toid = r['trainOrderId'] ?? r['orderId'] ?? '';
-                        return Chip(
-                          label: Text('Pociąg $toid',
-                              style: const TextStyle(fontSize: 12)),
-                          visualDensity: VisualDensity.compact,
-                        );
-                      }).toList(),
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: item.affectedRoutes
+                          .take(20)
+                          .map((r) =>
+                              _buildAffectedTrainChip(r, appState, theme))
+                          .toList(),
                     ),
                     const SizedBox(height: 16),
                   ],
-
-                  // Raw API JSON
-                  ExpansionTile(
-                    title: const Text('Pełne dane API (JSON)',
-                        style: TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.bold)),
-                    children: [
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: SelectableText(
-                          const JsonEncoder.withIndent('  ').convert(item.raw),
-                          style: const TextStyle(
-                              fontFamily: 'monospace', fontSize: 11),
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
               ),
             );
@@ -318,12 +350,10 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
         itemCount: _disruptions.length,
         itemBuilder: (context, index) {
           final item = _disruptions[index];
-          final typeName = _disruptionTypes[item.disruptionTypeCode] ??
-              item.disruptionTypeCode ??
-              'Utrudnienie w ruchu';
+          final typeName = _typeLabel(item);
           final startName = _getStationName(item.startStationId, appState);
           final endName = _getStationName(item.endStationId, appState);
-          final msg = item.message ?? '';
+          final msg = _message(item);
           final preview =
               msg.length > 120 ? '${msg.substring(0, 120)}...' : msg;
 
@@ -380,8 +410,9 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
                       ),
                     ],
                     const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 4,
                       children: [
                         if (item.affectedRoutes.isNotEmpty)
                           Text(

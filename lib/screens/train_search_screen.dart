@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../models/models.dart';
+import '../utils/category_utils.dart';
 import '../utils/date_utils.dart' as app_date;
 import 'train_details_screen.dart';
 
@@ -28,6 +29,27 @@ class _TrainSearchScreenState extends State<TrainSearchScreen>
   void dispose() {
     _numberController.dispose();
     super.dispose();
+  }
+
+  String _getShortCarrierName(String? rawName) {
+    if (rawName == null) return '';
+    if (rawName.contains('PKP Intercity')) return 'PKP Intercity';
+    if (rawName.contains('POLREGIO')) return 'POLREGIO';
+    if (rawName.contains('Koleje Mazowieckie')) return 'Koleje Mazowieckie';
+    if (rawName.contains('Koleje Wielkopolskie')) return 'Koleje Wielkopolskie';
+    if (rawName.contains('Koleje \u015al\u0105skie')) {
+      return 'Koleje \u015al\u0105skie';
+    }
+    if (rawName.contains('Koleje Ma\u0142opolskie')) {
+      return 'Koleje Ma\u0142opolskie';
+    }
+    if (rawName.contains('Koleje Dolno\u015bl\u0105skie')) {
+      return 'Koleje Dolno\u015bl\u0105skie';
+    }
+    if (rawName.contains('\u0141\u00f3dzka Kolej Aglomeracyjna')) {
+      return '\u0141KA';
+    }
+    return rawName;
   }
 
   Future<void> _pickDate() async {
@@ -295,9 +317,8 @@ class _TrainSearchScreenState extends State<TrainSearchScreen>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
                                     children: [
@@ -307,8 +328,11 @@ class _TrainSearchScreenState extends State<TrainSearchScreen>
                                           padding: const EdgeInsets.symmetric(
                                               horizontal: 6, vertical: 2),
                                           decoration: BoxDecoration(
-                                            color: theme
-                                                .colorScheme.primaryContainer,
+                                            color: categoryColor(
+                                              item.category,
+                                              isDark: theme.brightness ==
+                                                  Brightness.dark,
+                                            ),
                                             borderRadius:
                                                 BorderRadius.circular(4),
                                           ),
@@ -317,8 +341,10 @@ class _TrainSearchScreenState extends State<TrainSearchScreen>
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
                                               fontSize: 12,
-                                              color: theme.colorScheme
-                                                  .onPrimaryContainer,
+                                              color: categoryTextColor(
+                                                  item.category,
+                                                  isDark: theme.brightness ==
+                                                      Brightness.dark),
                                             ),
                                           ),
                                         ),
@@ -334,54 +360,87 @@ class _TrainSearchScreenState extends State<TrainSearchScreen>
                                       if (item.trainName != null &&
                                           item.trainName!.isNotEmpty) ...[
                                         const SizedBox(width: 8),
-                                        Text(
-                                          '"${item.trainName}"',
-                                          style: TextStyle(
-                                            fontStyle: FontStyle.italic,
-                                            color: theme
-                                                .colorScheme.onSurfaceVariant,
-                                            fontSize: 14,
+                                        Expanded(
+                                          child: Text(
+                                            item.trainName!,
+                                            style: TextStyle(
+                                              color: theme
+                                                  .colorScheme.onSurfaceVariant,
+                                              fontSize: 14,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
-                                      ],
+                                      ] else
+                                        const Spacer(),
                                     ],
                                   ),
-                                  if (item.carrierName != null)
-                                    Text(
-                                      item.carrierName!,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: theme.colorScheme.outline,
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          item.fromStationName,
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.w500,
+                                              fontSize: 13),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
-                                    ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      '${item.fromStationName} (${item.departureTime})',
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w500,
-                                          fontSize: 13),
-                                    ),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 6.0),
+                                        child: Icon(Icons.arrow_forward,
+                                            size: 16,
+                                            color: theme.colorScheme.outline),
+                                      ),
+                                      Expanded(
+                                        child: Text(
+                                          item.toStationName,
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.w500,
+                                              fontSize: 13),
+                                          textAlign: TextAlign.end,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 6.0),
-                                    child: Icon(Icons.arrow_forward,
-                                        size: 16,
-                                        color: theme.colorScheme.outline),
-                                  ),
-                                  Expanded(
-                                    child: Text(
-                                      '${item.toStationName} (${item.arrivalTime})',
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w500,
-                                          fontSize: 13),
-                                      textAlign: TextAlign.end,
-                                    ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        item.departureTime,
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            color: theme
+                                                .colorScheme.onSurfaceVariant),
+                                      ),
+                                      Expanded(
+                                        child: Text(
+                                          _getShortCarrierName(
+                                              item.carrierName),
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              color: theme.colorScheme.outline),
+                                          textAlign: TextAlign.center,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      Text(
+                                        item.arrivalTime,
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            color: theme
+                                                .colorScheme.onSurfaceVariant),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),

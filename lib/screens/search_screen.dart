@@ -4,18 +4,13 @@ import '../app_state.dart';
 import '../models/models.dart';
 import '../utils/date_utils.dart' as app_date;
 import '../widgets/station_search.dart';
-import 'results_screen.dart';
+import '../widgets/connection_results.dart';
 
 class SearchScreen extends StatefulWidget {
   final Station? initialFromStation;
   final Station? initialToStation;
-
-  const SearchScreen({
-    super.key,
-    this.initialFromStation,
-    this.initialToStation,
-  });
-
+  const SearchScreen(
+      {super.key, this.initialFromStation, this.initialToStation});
   @override
   State<SearchScreen> createState() => _SearchScreenState();
 }
@@ -27,347 +22,242 @@ class _SearchScreenState extends State<SearchScreen>
   late DateTime _selectedDate;
   late TimeOfDay _selectedTime;
   bool _isSearching = false;
-
+  List<ConnectionResult>? _results;
+  DateTime? _searchedAt;
+  String? _error;
+  int _request = 0;
   @override
   bool get wantKeepAlive => true;
-
   @override
   void initState() {
     super.initState();
     _fromStation = widget.initialFromStation;
     _toStation = widget.initialToStation;
     final now = DateTime.now();
-    _selectedDate = DateTime(now.year, now.month, now.day);
+    _selectedDate = DateUtils.dateOnly(now);
     _selectedTime = TimeOfDay.fromDateTime(now);
   }
 
-  void _swapStations() {
+  void _changed(VoidCallback change) {
     setState(() {
-      final temp = _fromStation;
-      _fromStation = _toStation;
-      _toStation = temp;
+      change();
+      _request++;
+      _isSearching = false;
+      _results = null;
+      _error = null;
     });
   }
 
-  void _setNow() {
-    final now = DateTime.now();
-    setState(() {
-      _selectedDate = DateTime(now.year, now.month, now.day);
-      _selectedTime = TimeOfDay.fromDateTime(now);
-    });
-  }
-
-  void _setToday() {
-    final now = DateTime.now();
-    setState(() {
-      _selectedDate = DateTime(now.year, now.month, now.day);
-    });
-  }
-
-  void _setTomorrow() {
-    final t = app_date.tomorrow();
-    setState(() {
-      _selectedDate = t;
-    });
-  }
-
+  void _swapStations() => _changed(() {
+        final old = _fromStation;
+        _fromStation = _toStation;
+        _toStation = old;
+      });
+  void _setNow() => _changed(() {
+        final now = DateTime.now();
+        _selectedDate = DateUtils.dateOnly(now);
+        _selectedTime = TimeOfDay.fromDateTime(now);
+      });
   Future<void> _pickDate() async {
-    final now = DateTime.now();
+    FocusScope.of(context).unfocus();
+    final now = DateUtils.dateOnly(DateTime.now());
     final picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(now.year, now.month, now.day)
-          .subtract(const Duration(days: 1)),
-      lastDate:
-          DateTime(now.year, now.month, now.day).add(const Duration(days: 60)),
-    );
-    if (picked != null) {
-      setState(() => _selectedDate = picked);
-    }
+        context: context,
+        initialDate: _selectedDate,
+        firstDate: now.subtract(const Duration(days: 1)),
+        lastDate: now.add(const Duration(days: 60)));
+    if (mounted && picked != null) _changed(() => _selectedDate = picked);
   }
 
   Future<void> _pickTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: _selectedTime,
-    );
-    if (picked != null) {
-      setState(() => _selectedTime = picked);
-    }
+    FocusScope.of(context).unfocus();
+    final picked =
+        await showTimePicker(context: context, initialTime: _selectedTime);
+    if (mounted && picked != null) _changed(() => _selectedTime = picked);
   }
 
   Future<void> _performSearch() async {
-    if (_fromStation == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Wybierz stację początkową (Skąd).')),
-      );
+    final from = _fromStation, to = _toStation;
+    if (from == null || to == null || from.id == to.id) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(from == null || to == null
+              ? 'Wybierz stację początkową i docelową.'
+              : 'Stacja początkowa i docelowa muszą być różne.')));
       return;
     }
-    if (_toStation == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Wybierz stację docelową (Dokąd).')),
-      );
-      return;
-    }
-    if (_fromStation!.id == _toStation!.id) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Stacja początkowa i docelowa muszą być różne.')),
-      );
-      return;
-    }
-
-    setState(() => _isSearching = true);
-
-    final appState = context.read<AppState>();
+    FocusScope.of(context).unfocus();
+    final date = _selectedDate, time = _selectedTime;
+    final request = ++_request;
+    setState(() {
+      _isSearching = true;
+      _error = null;
+    });
     try {
-      final results = await appState.searchConnections(
-        fromStation: _fromStation!,
-        toStation: _toStation!,
-        date: _selectedDate,
-        time: _selectedTime,
-      );
-
-      if (!mounted) return;
-
-      final dateStr = app_date.formatDateDisplay(_selectedDate);
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ResultsScreen(
-            results: results,
-            fromStationName: _fromStation!.name,
-            toStationName: _toStation!.name,
-            date: dateStr,
-          ),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Błąd wyszukiwania: $e')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isSearching = false);
+      final results = await context.read<AppState>().searchConnections(
+          fromStation: from, toStation: to, date: date, time: time);
+      if (!mounted || request != _request) return;
+      setState(() {
+        _results = results;
+        _searchedAt =
+            DateTime(date.year, date.month, date.day, time.hour, time.minute);
+      });
+    } catch (_) {
+      if (mounted && request == _request) {
+        setState(() =>
+            _error = 'Nie udało się wyszukać połączeń. Spróbuj ponownie.');
       }
+    } finally {
+      if (mounted && request == _request) setState(() => _isSearching = false);
     }
+  }
+
+  void _searchFavoriteRoute(FavoriteRoute favorite) {
+    _changed(() {
+      _fromStation =
+          Station(id: favorite.fromStationId, name: favorite.fromStationName);
+      _toStation =
+          Station(id: favorite.toStationId, name: favorite.toStationName);
+      final now = DateTime.now();
+      _selectedDate = DateUtils.dateOnly(now);
+      _selectedTime = TimeOfDay.fromDateTime(now);
+    });
+    _performSearch();
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final appState = context.watch<AppState>();
+    final state = context.watch<AppState>();
     final theme = Theme.of(context);
-
-    final isFavoriteRoute = _fromStation != null &&
+    final favorite = _fromStation != null &&
         _toStation != null &&
-        appState.isRouteFavorite(_fromStation!.id, _toStation!.id);
-
+        state.isRouteFavorite(_fromStation!.id, _toStation!.id);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Połączenia kolejowe',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        actions: [
-          if (_fromStation != null && _toStation != null)
-            IconButton(
-              icon: Icon(
-                isFavoriteRoute ? Icons.star : Icons.star_border,
-                color:
-                    isFavoriteRoute ? Colors.amber : theme.colorScheme.outline,
-              ),
-              onPressed: () =>
-                  appState.toggleFavoriteRoute(_fromStation!, _toStation!),
-              tooltip: isFavoriteRoute
+      appBar: AppBar(title: const Text('Połączenia kolejowe'), actions: [
+        if (_fromStation != null &&
+            _toStation != null &&
+            _fromStation!.id != _toStation!.id)
+          IconButton(
+              tooltip: favorite
                   ? 'Usuń trasę z ulubionych'
                   : 'Dodaj trasę do ulubionych',
-            ),
-        ],
-      ),
-      body: appState.isLoading && appState.stations.isEmpty
-          ? const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+              icon: Icon(favorite ? Icons.star : Icons.star_border),
+              onPressed: () =>
+                  state.toggleFavoriteRoute(_fromStation!, _toStation!)),
+      ]),
+      body: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(children: [
+              Expanded(
+                  child: Column(children: [
+                StationSearchField(
+                    key: const ValueKey('origin-field'),
+                    label: 'Stacja początkowa',
+                    marker: 'A',
+                    stations: state.stations,
+                    selectedStation: _fromStation,
+                    onStationSelected: (s) => _changed(() => _fromStation = s)),
+                StationSearchField(
+                    key: const ValueKey('destination-field'),
+                    label: 'Stacja docelowa',
+                    marker: 'B',
+                    stations: state.stations,
+                    selectedStation: _toStation,
+                    onStationSelected: (s) => _changed(() => _toStation = s)),
+              ])),
+              IconButton(
+                  tooltip: 'Zamień stacje',
+                  onPressed: _swapStations,
+                  icon: const Icon(Icons.swap_vert))
+            ]),
+            if (state.isLoading && state.stations.isEmpty)
+              const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text('Wczytywanie stacji…')),
+            const SizedBox(height: 8),
+            Wrap(
+                spacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Wczytywanie stacji z API PLK...'),
-                ],
-              ),
-            )
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Card(
-                    elevation: 1,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Skąd field
-                          StationSearchField(
-                            label: 'Skąd (stacja początkowa)',
-                            stations: appState.stations,
-                            selectedStation: _fromStation,
-                            onStationSelected: (s) =>
-                                setState(() => _fromStation = s),
-                          ),
-                          const SizedBox(height: 6),
-
-                          // Swap button
-                          Center(
-                            child: OutlinedButton.icon(
-                              onPressed: _swapStations,
-                              icon: const Icon(Icons.swap_vert, size: 18),
-                              label: const Text('Zamień stacje'),
-                              style: OutlinedButton.styleFrom(
-                                visualDensity: VisualDensity.compact,
-                                side: BorderSide(
-                                    color: theme.colorScheme.outlineVariant),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-
-                          // Dokąd field
-                          StationSearchField(
-                            label: 'Dokąd (stacja docelowa)',
-                            stations: appState.stations,
-                            selectedStation: _toStation,
-                            onStationSelected: (s) =>
-                                setState(() => _toStation = s),
-                          ),
-                          const SizedBox(height: 16),
-
-                          // Independent Date & Time pickers
-                          Row(
-                            children: [
-                              Expanded(
-                                child: InkWell(
-                                  onTap: _pickDate,
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: InputDecorator(
-                                    decoration: InputDecoration(
-                                      labelText: 'Data podróży',
-                                      prefixIcon: Icon(
-                                          Icons.calendar_today_outlined,
-                                          size: 20,
-                                          color: theme.colorScheme.primary),
-                                      border: const OutlineInputBorder(
-                                          borderRadius: BorderRadius.all(
-                                              Radius.circular(10))),
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                              horizontal: 12, vertical: 12),
-                                    ),
-                                    child: Text(
-                                      app_date.formatDateDisplay(_selectedDate),
-                                      style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: InkWell(
-                                  onTap: _pickTime,
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: InputDecorator(
-                                    decoration: InputDecoration(
-                                      labelText: 'Godzina od',
-                                      prefixIcon: Icon(
-                                          Icons.access_time_outlined,
-                                          size: 20,
-                                          color: theme.colorScheme.primary),
-                                      border: const OutlineInputBorder(
-                                          borderRadius: BorderRadius.all(
-                                              Radius.circular(10))),
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                              horizontal: 12, vertical: 12),
-                                    ),
-                                    child: Text(
-                                      app_date.formatTimeDisplay(
-                                          _selectedTime.hour,
-                                          _selectedTime.minute),
-                                      style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-
-                          // Quick Action Chips
-                          Wrap(
-                            spacing: 8,
-                            children: [
-                              ActionChip(
-                                avatar: const Icon(Icons.flash_on, size: 16),
-                                label: const Text('Teraz'),
-                                onPressed: _setNow,
-                              ),
-                              ActionChip(
-                                avatar: const Icon(Icons.today, size: 16),
-                                label: const Text('Dzisiaj'),
-                                onPressed: _setToday,
-                              ),
-                              ActionChip(
-                                avatar: const Icon(Icons.event, size: 16),
-                                label: const Text('Jutro'),
-                                onPressed: _setTomorrow,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-
-                          // Search Button
-                          SizedBox(
-                            width: double.infinity,
-                            height: 48,
-                            child: FilledButton.icon(
-                              onPressed: _isSearching ? null : _performSearch,
-                              icon: _isSearching
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2, color: Colors.white),
-                                    )
-                                  : const Icon(Icons.search),
-                              label: Text(
-                                _isSearching
-                                    ? 'WYSZUKIWANIE...'
-                                    : 'SZUKAJ POŁĄCZEŃ',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold, fontSize: 15),
-                              ),
-                              style: FilledButton.styleFrom(
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                  const Text('Odj.', style: TextStyle(fontSize: 13)),
+                  TextButton(
+                      key: const ValueKey('connection-date'),
+                      onPressed: _pickDate,
+                      child: Text(app_date.formatDateDisplay(_selectedDate))),
+                  TextButton(
+                      key: const ValueKey('connection-time'),
+                      onPressed: _pickTime,
+                      child: Text(app_date.formatTimeDisplay(
+                          _selectedTime.hour, _selectedTime.minute))),
+                  TextButton(onPressed: _setNow, child: const Text('Teraz')),
+                ]),
+            SizedBox(
+                height: 44,
+                child: FilledButton(
+                    onPressed: _isSearching ? null : _performSearch,
+                    style: FilledButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4))),
+                    child: const Text('WYSZUKAJ',
+                        style: TextStyle(fontWeight: FontWeight.bold)))),
+            const SizedBox(height: 16),
+            Text('Ulubione trasy',
+                style: theme.textTheme.titleSmall
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+            const Divider(),
+            if (state.favoriteRoutes.isEmpty) ...[
+              const Text('Brak ulubionych tras',
+                  style: TextStyle(fontSize: 13)),
+              Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                      onPressed: _results == null ||
+                              _fromStation == null ||
+                              _toStation == null
+                          ? null
+                          : () => state.toggleFavoriteRoute(
+                              _fromStation!, _toStation!),
+                      child: const Text(
+                          'Dodaj trasę do ulubionych po wyszukaniu połączenia',
+                          style: TextStyle(fontSize: 12)))),
+            ],
+            ...state.favoriteRoutes.map((f) => Row(children: [
+                  Expanded(
+                      child: InkWell(
+                          onTap: () => _searchFavoriteRoute(f),
+                          child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              child: Text(
+                                  '${f.fromStationName} → ${f.toStationName}',
+                                  style: const TextStyle(fontSize: 13))))),
+                  IconButton(
+                      tooltip: 'Usuń trasę',
+                      onPressed: () => state.removeFavoriteRoute(
+                          f.fromStationId, f.toStationId),
+                      icon: const Icon(Icons.close, size: 18)),
+                ])),
+            if (_isSearching)
+              const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Row(children: [
+                    SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                    SizedBox(width: 10),
+                    Expanded(child: Text('Wyszukiwanie połączeń...'))
+                  ])),
+            if (_error != null)
+              Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Text(_error!)),
+            if (_results != null)
+              ConnectionResults(
+                  results: _results!, selectedDeparture: _searchedAt!),
+            const SizedBox(height: 16),
+          ])),
     );
   }
 }

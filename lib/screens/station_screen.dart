@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../models/models.dart';
+import '../utils/category_utils.dart';
+import '../utils/format_utils.dart';
+import '../utils/date_utils.dart' as app_date;
 import '../widgets/station_search.dart';
 import 'train_details_screen.dart';
 
@@ -16,6 +19,8 @@ class _StationScreenState extends State<StationScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   bool _isSelectingStation = false;
+  bool _showPreviousDepartures = false;
+  bool _showPreviousArrivals = false;
 
   @override
   void initState() {
@@ -29,50 +34,114 @@ class _StationScreenState extends State<StationScreen>
     super.dispose();
   }
 
-  Widget _buildDelayBadge(int? delay, bool isCancelled) {
+  String? _formatPlatformTrack(String? platform, String? track) {
+    return formatPlatformTrack(platform, track);
+  }
+
+  Widget _buildSectionDivider(String title, ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Divider(
+              height: 1,
+              thickness: 1.5,
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.7),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(
+              title,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Divider(
+              height: 1,
+              thickness: 1.5,
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.7),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getShortCarrierName(String? rawName) {
+    if (rawName == null) return '';
+    if (rawName.contains('PKP Intercity')) return 'PKP Intercity';
+    if (rawName.contains('POLREGIO')) return 'POLREGIO';
+    if (rawName.contains('Koleje Mazowieckie')) return 'Koleje Mazowieckie';
+    if (rawName.contains('Koleje Wielkopolskie')) return 'Koleje Wielkopolskie';
+    if (rawName.contains('Koleje \u015al\u0105skie')) {
+      return 'Koleje \u015al\u0105skie';
+    }
+    if (rawName.contains('Koleje Ma\u0142opolskie')) {
+      return 'Koleje Ma\u0142opolskie';
+    }
+    if (rawName.contains('Koleje Dolno\u015bl\u0105skie')) {
+      return 'Koleje Dolno\u015bl\u0105skie';
+    }
+    if (rawName.contains('\u0141\u00f3dzka Kolej Aglomeracyjna')) {
+      return '\u0141KA';
+    }
+    return rawName;
+  }
+
+  Color _getCategoryColor(String category, ColorScheme scheme, bool isDark) {
+    return categoryColor(category, isDark: isDark);
+  }
+
+  Widget _buildDelayStatus(int? delay, bool isCancelled, ThemeData theme) {
     if (isCancelled) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: Colors.red.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: const Text(
-          'Odwołany',
-          style: TextStyle(
-              color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12),
+      return const Text(
+        'Odwołany',
+        style: TextStyle(
+          color: Colors.red,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
         ),
       );
     }
 
     if (delay == null || delay == 0) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: Colors.green.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: const Text(
-          'Planowo',
-          style: TextStyle(
-              color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12),
+      return const Text(
+        'Planowo',
+        style: TextStyle(
+          color: Colors.green,
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
         ),
       );
     }
 
-    final color = delay <= 10 ? Colors.orange.shade800 : Colors.red;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        '+$delay min',
-        style:
-            TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12),
+    return Text(
+      '+$delay min',
+      style: const TextStyle(
+        color: Colors.red,
+        fontWeight: FontWeight.bold,
+        fontSize: 12,
       ),
     );
+  }
+
+  bool _isItemPast(StationBoardItem item, DateTime now) {
+    final date = item.operatingDate.isEmpty
+        ? app_date.formatDateForApi(now)
+        : item.operatingDate;
+    final actual = app_date.scheduleDateTime(item.actualTime, date);
+    final planned =
+        app_date.scheduleDateTime(item.plannedTime ?? item.time, date);
+    final effective =
+        actual ?? planned?.add(Duration(minutes: item.delayMinutes ?? 0));
+    return effective != null && now.difference(effective).inMinutes > 5;
   }
 
   Widget _buildStationHeader(AppState appState) {
@@ -152,7 +221,28 @@ class _StationScreenState extends State<StationScreen>
                           const SizedBox(height: 2),
                           Row(
                             children: [
-                              if (appState.isStationFromGps) ...[
+                              if (appState.isDetectingLocation ||
+                                  (appState.isLoading && station == null)) ...[
+                                const SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 1.5),
+                                ),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    'Ustalanie stacji na podstawie GPS...',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: theme.colorScheme.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ] else if (appState.isStationFromGps) ...[
                                 Icon(
                                   Icons.near_me,
                                   size: 13,
@@ -228,18 +318,6 @@ class _StationScreenState extends State<StationScreen>
               ],
             ),
           ],
-          if (appState.locationMessage != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6.0),
-              child: Text(
-                appState.locationMessage!,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: theme.colorScheme.error,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -316,112 +394,153 @@ class _StationScreenState extends State<StationScreen>
       );
     }
 
+    final now = DateTime.now();
+    final pastItems = <StationBoardItem>[];
+    final upcomingItems = <StationBoardItem>[];
+
+    for (final item in items) {
+      if (_isItemPast(item, now)) {
+        pastItems.add(item);
+      } else {
+        upcomingItems.add(item);
+      }
+    }
+
+    final showPast =
+        isArrival ? _showPreviousArrivals : _showPreviousDepartures;
+    // If all items are past, show them so user is not presented with an empty list
+    final hasUpcoming = upcomingItems.isNotEmpty;
+    final displayItems = (showPast || !hasUpcoming)
+        ? [...pastItems, ...upcomingItems]
+        : upcomingItems;
+
     return RefreshIndicator(
       onRefresh: () => appState.loadStationBoard(appState.currentStation!.id),
       child: ListView.separated(
         padding: EdgeInsets.only(
-          top: 8,
-          bottom: MediaQuery.of(context).padding.bottom + 8,
+          top: 4,
+          bottom: MediaQuery.of(context).padding.bottom + 80,
         ),
-        itemCount: items.length,
-        separatorBuilder: (_, __) => Divider(
-          height: 1,
-          indent: 16,
-          endIndent: 16,
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
-        ),
+        itemCount:
+            displayItems.length + (hasUpcoming && pastItems.isNotEmpty ? 1 : 0),
+        separatorBuilder: (_, index) {
+          if (hasUpcoming && pastItems.isNotEmpty && index == 0) {
+            return const SizedBox.shrink();
+          }
+          if (showPast &&
+              hasUpcoming &&
+              pastItems.isNotEmpty &&
+              index == pastItems.length) {
+            return _buildSectionDivider('Aktualne i nadchodzące', theme);
+          }
+          return Divider(
+            height: 1,
+            thickness: 0.6,
+            indent: 14,
+            endIndent: 14,
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
+          );
+        },
         itemBuilder: (context, index) {
-          final item = items[index];
-
-          return ListTile(
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            leading: SizedBox(
-              width: 58,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.time,
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.primary,
+          if (hasUpcoming && pastItems.isNotEmpty) {
+            if (index == 0) {
+              return Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      if (isArrival) {
+                        _showPreviousArrivals = !_showPreviousArrivals;
+                      } else {
+                        _showPreviousDepartures = !_showPreviousDepartures;
+                      }
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest
+                          .withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                  ),
-                  if (item.plannedTime != null &&
-                      item.actualTime != null &&
-                      item.plannedTime != item.actualTime)
-                    Text(
-                      item.plannedTime!,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: theme.colorScheme.outline,
-                        decoration: TextDecoration.lineThrough,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            title: Text(
-              item.direction,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 2),
-                Text(
-                  () {
-                    final parts = <String>[];
-                    // Combine category and number: "IC 5410"
-                    final trainLabel = [
-                      if (item.trainCategory.isNotEmpty) item.trainCategory,
-                      if (item.trainNumber.isNotEmpty) item.trainNumber,
-                    ].join(' ').trim();
-                    if (trainLabel.isNotEmpty) {
-                      parts.add(trainLabel);
-                    }
-                    if (item.carrier.isNotEmpty) parts.add(item.carrier);
-                    return parts.isNotEmpty
-                        ? parts.join(' | ')
-                        : 'Numer niedostępny';
-                  }(),
-                  style: TextStyle(
-                      fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (item.platform != null && item.platform!.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 5, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          showPast ? Icons.expand_less : Icons.expand_more,
+                          size: 16,
+                          color: theme.colorScheme.primary,
                         ),
-                        child: Text(
-                          'Peron ${item.platform}${(item.track != null && item.track!.isNotEmpty) ? ' / Tor ${item.track}' : ''}',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: theme.colorScheme.onSurfaceVariant,
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            showPast
+                                ? (isArrival
+                                    ? 'Ukryj wcze\u015bniejsze przyjazdy'
+                                    : 'Ukryj wcze\u015bniejsze odjazdy')
+                                : (isArrival
+                                    ? 'Poka\u017c wcze\u015bniejsze przyjazdy (${pastItems.length})'
+                                    : 'Poka\u017c wcze\u015bniejsze odjazdy (${pastItems.length})'),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.primary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ],
-              ],
-            ),
-            trailing: _buildDelayBadge(item.delayMinutes, item.isCancelled),
-            onTap: () {
+                ),
+              );
+            }
+            final itemIndex = index - 1;
+            final item = displayItems[itemIndex];
+            final isPastItem = showPast && itemIndex < pastItems.length;
+            return _buildRow(item, isArrival, isPastItem, theme, appState);
+          }
+
+          final item = displayItems[index];
+          final isPastItem = pastItems.contains(item);
+          return _buildRow(item, isArrival, isPastItem, theme, appState);
+        },
+      ),
+    );
+  }
+
+  Widget _buildRow(StationBoardItem item, bool isArrival, bool isPastItem,
+      ThemeData theme, AppState appState) {
+    final isDark = theme.brightness == Brightness.dark;
+    final catColor =
+        _getCategoryColor(item.trainCategory, theme.colorScheme, isDark);
+    final platTrack = _formatPlatformTrack(item.platform, item.track);
+    final shortCarrier = _getShortCarrierName(item.carrier);
+
+    final hasDelay = item.delayMinutes != null && item.delayMinutes! > 0;
+    final isCancelled = item.isCancelled;
+
+    final mainTime = hasDelay
+        ? (item.actualTime ?? item.time)
+        : (item.plannedTime ?? item.time);
+    final struckTime = hasDelay ? item.plannedTime : null;
+
+    final timeColor = isCancelled
+        ? Colors.red
+        : (hasDelay ? Colors.red : theme.colorScheme.primary);
+    final catTextColor = categoryTextColor(item.trainCategory, isDark: isDark);
+
+    return Opacity(
+      opacity: isPastItem ? 0.65 : 1.0,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            Future.delayed(const Duration(milliseconds: 50), () {
+              if (!mounted) return;
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -431,6 +550,8 @@ class _StationScreenState extends State<StationScreen>
                         scheduleId: item.scheduleId,
                         orderId: item.orderId,
                         nationalNumber: item.trainNumber,
+                        name: item.trainName,
+                        commercialCategorySymbol: item.trainCategory,
                         operatingDates: [item.operatingDate],
                         stations: [],
                         connections: [],
@@ -460,9 +581,153 @@ class _StationScreenState extends State<StationScreen>
                   ),
                 ),
               );
-            },
-          );
-        },
+            });
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 1. LEWA KOLUMNA: GODZINA
+                SizedBox(
+                  width: 50,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        mainTime,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: timeColor,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      if (struckTime != null && struckTime != mainTime) ...[
+                        const SizedBox(height: 1),
+                        Text(
+                          struckTime,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: theme.colorScheme.outline,
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+
+                // 2. ŚRODKOWA + PRAWA KOLUMNA
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Wiersz 1: [Badge] [Numer] [Nazwa pociągu / przewoźnik] ... [Peron/Tor]
+                      Row(
+                        children: [
+                          if (item.trainCategory.isNotEmpty) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 5, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: catColor,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                item.trainCategory,
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: catTextColor,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                          ],
+                          if (item.trainNumber.isNotEmpty) ...[
+                            Text(
+                              item.trainNumber,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                          if (item.trainName.isNotEmpty) ...[
+                            Expanded(
+                              child: Text(
+                                item.trainName,
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontStyle: FontStyle.italic,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ] else if (shortCarrier.isNotEmpty) ...[
+                            Expanded(
+                              child: Text(
+                                shortCarrier,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: theme.colorScheme.outline,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ] else ...[
+                            const Spacer(),
+                          ],
+                        ],
+                      ),
+                      if (platTrack != null)
+                        Padding(
+                            padding: const EdgeInsets.only(top: 3),
+                            child: Text(platTrack,
+                                style: TextStyle(
+                                    fontSize: 11.5,
+                                    color:
+                                        theme.colorScheme.onSurfaceVariant))),
+                      const SizedBox(height: 3),
+
+                      // Wiersz 2: [Strzałka] [Kierunek] ... [Status/Opóźnienie]
+                      Row(
+                        children: [
+                          Icon(
+                            isArrival ? Icons.arrow_back : Icons.arrow_forward,
+                            size: 13,
+                            color: theme.colorScheme.outline,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              item.direction,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13.5,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          _buildDelayStatus(
+                              item.delayMinutes, isCancelled, theme),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -501,27 +766,34 @@ class _StationScreenState extends State<StationScreen>
               indicatorColor: theme.colorScheme.primary,
               labelColor: theme.colorScheme.primary,
               unselectedLabelColor: theme.colorScheme.outline,
+              labelPadding: const EdgeInsets.symmetric(horizontal: 8),
               tabs: const [
                 Tab(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.north_east, size: 16),
-                      SizedBox(width: 8),
-                      Text('Odjazdy',
-                          style: TextStyle(fontWeight: FontWeight.w600)),
-                    ],
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.north_east, size: 15),
+                        SizedBox(width: 6),
+                        Text('Odjazdy',
+                            style: TextStyle(fontWeight: FontWeight.w600)),
+                      ],
+                    ),
                   ),
                 ),
                 Tab(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.south_west, size: 16),
-                      SizedBox(width: 8),
-                      Text('Przyjazdy',
-                          style: TextStyle(fontWeight: FontWeight.w600)),
-                    ],
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.south_west, size: 15),
+                        SizedBox(width: 6),
+                        Text('Przyjazdy',
+                            style: TextStyle(fontWeight: FontWeight.w600)),
+                      ],
+                    ),
                   ),
                 ),
               ],

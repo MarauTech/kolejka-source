@@ -266,49 +266,30 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _initializeInitialStation() async {
-    // 1. Check if user previously manually selected a station
-    final lastManual = cache.loadLastSelectedStation();
-    if (lastManual != null) {
-      final id = lastManual['id'] as int?;
-      final name = lastManual['name'] as String?;
+    final saved = cache.loadLastSelectedStation() ?? cache.loadNearestStation();
+    if (currentStation == null && saved != null) {
+      final id = saved['id'] as int?;
+      final name = saved['name'] as String?;
       if (id != null && name != null) {
         currentStation = Station(id: id, name: name);
-        isStationFromGps = false;
-        loadStationBoard(id);
-        return;
       }
     }
-
-    // 2. Check cached nearest station
-    final cachedNearest = cache.loadNearestStation();
-    if (cachedNearest != null) {
-      final id = cachedNearest['id'] as int?;
-      final name = cachedNearest['name'] as String?;
-      if (id != null && name != null) {
-        currentStation = Station(id: id, name: name);
-        isStationFromGps = true;
-        loadStationBoard(id);
-        return;
-      }
-    }
-
-    // 3. Try to detect GPS nearest station
-    await detectNearestStation(forceRefresh: false);
-
-    // 4. Default fallback if nothing detected: Warszawa Centralna or first in list
     if (currentStation == null && stations.isNotEmpty) {
-      final defaultSt = stations.firstWhere(
-        (s) => s.name.toUpperCase().contains('WARSZAWA CENTRALNA'),
-        orElse: () => stations.first,
-      );
-      currentStation = defaultSt;
-      isStationFromGps = false;
-      loadStationBoard(defaultSt.id);
+      currentStation = stations.firstWhere(
+          (s) => s.name.toUpperCase().contains('WARSZAWA CENTRALNA'),
+          orElse: () => stations.first);
     }
+    if (currentStation != null) unawaited(loadStationBoard(currentStation!.id));
+    // Keep the saved board usable while GPS runs in the background.
+    unawaited(detectNearestStation());
   }
+
+  int _stationSelectionVersion = 0;
 
   /// Detect nearest station using LocationService and OSM
   Future<void> detectNearestStation({bool forceRefresh = true}) async {
+    if (isDetectingLocation) return;
+    final selectionVersion = _stationSelectionVersion;
     isDetectingLocation = true;
     locationMessage = null;
     notifyListeners();
@@ -355,6 +336,7 @@ class AppState extends ChangeNotifier {
       }
 
       final nearestResult = await locationService.findNearestStation(stations);
+      if (selectionVersion != _stationSelectionVersion) return;
       if (nearestResult != null) {
         currentStation = nearestResult.station;
         isStationFromGps = true;
@@ -379,6 +361,7 @@ class AppState extends ChangeNotifier {
 
   /// Manually select station for station board
   Future<void> selectManualStation(Station station) async {
+    _stationSelectionVersion++;
     currentStation = station;
     isStationFromGps = false;
     locationMessage = null;
@@ -409,18 +392,22 @@ class AppState extends ChangeNotifier {
       final opsTime = _stationBoardOpsCacheTime[stationId];
       if (opsTime != null && now.difference(opsTime).inSeconds < 30) {
         opsResponse = _stationBoardOpsCache[stationId];
-        if (kDebugMode) debugPrint('[PDP] cache HIT operations for station $stationId');
+        if (kDebugMode) {
+          debugPrint('[PDP] cache HIT operations for station $stationId');
+        }
       }
 
       final schedTime = _stationBoardSchedCacheTime[stationId];
       if (schedTime != null && now.difference(schedTime).inMinutes < 15) {
         schedResponse = _stationBoardSchedCache[stationId];
-        if (kDebugMode) debugPrint('[PDP] cache HIT schedules for station $stationId');
+        if (kDebugMode) {
+          debugPrint('[PDP] cache HIT schedules for station $stationId');
+        }
       }
 
       // Fetch what is missing in parallel
       final futures = <Future>[];
-      
+
       late Future<Map<String, dynamic>> opsFuture;
       if (opsResponse == null) {
         opsFuture = api.getOperations(
@@ -432,7 +419,9 @@ class AppState extends ChangeNotifier {
           opsResponse = res;
           _stationBoardOpsCache[stationId] = res;
           _stationBoardOpsCacheTime[stationId] = DateTime.now();
-          if (kDebugMode) debugPrint('[PDP] cache MISS operations for station $stationId');
+          if (kDebugMode) {
+            debugPrint('[PDP] cache MISS operations for station $stationId');
+          }
         }));
       }
 
@@ -446,7 +435,9 @@ class AppState extends ChangeNotifier {
           schedResponse = res;
           _stationBoardSchedCache[stationId] = res;
           _stationBoardSchedCacheTime[stationId] = DateTime.now();
-          if (kDebugMode) debugPrint('[PDP] cache MISS schedules for station $stationId');
+          if (kDebugMode) {
+            debugPrint('[PDP] cache MISS schedules for station $stationId');
+          }
         }));
       }
 
@@ -463,7 +454,7 @@ class AppState extends ChangeNotifier {
         final route = r as Map<String, dynamic>;
         final schedId = route['scheduleId'];
         final ordId = route['orderId'];
-        scheduleData['${schedId}_${ordId}'] = route;
+        scheduleData['${schedId}_$ordId'] = route;
       }
 
       final List<StationBoardItem> departures = [];
@@ -474,10 +465,14 @@ class AppState extends ChangeNotifier {
         final schedKey = '${op.scheduleId}_${op.orderId}';
         final sched = scheduleData[schedKey];
 
-        // 1. Try to find departure/arrival train number in the stations list from schedule
+        // 1. Try to find departure/arrival train number and platform/track in the stations list from schedule
         String? depTrainNum;
         String? arrTrainNum;
-        
+        String? depPlatform;
+        String? arrPlatform;
+        String? depTrack;
+        String? arrTrack;
+
         if (sched != null && sched['stations'] != null) {
           final stations = sched['stations'] as List<dynamic>;
           for (final st in stations) {
@@ -485,6 +480,14 @@ class AppState extends ChangeNotifier {
             if (stationMap['stationId'] == stationId) {
               depTrainNum = stationMap['departureTrainNumber'] as String?;
               arrTrainNum = stationMap['arrivalTrainNumber'] as String?;
+              depPlatform = stationMap['departurePlatform'] as String? ??
+                  stationMap['platform'] as String?;
+              arrPlatform = stationMap['arrivalPlatform'] as String? ??
+                  stationMap['platform'] as String?;
+              depTrack = stationMap['departureTrack'] as String? ??
+                  stationMap['track'] as String?;
+              arrTrack = stationMap['arrivalTrack'] as String? ??
+                  stationMap['track'] as String?;
               break;
             }
           }
@@ -494,9 +497,10 @@ class AppState extends ChangeNotifier {
         final natNum = sched?['nationalNumber'] as String?;
         final intDepNum = sched?['internationalDepartureNumber'] as String?;
         final intArrNum = sched?['internationalArrivalNumber'] as String?;
-        
+
         final catSymbol = sched?['commercialCategorySymbol'] as String? ?? '';
         final carrierCode = sched?['carrierCode'] as String? ?? '';
+        final trainNameRaw = sched?['name'] as String? ?? '';
         final carrierName = carrierCode.isNotEmpty
             ? (carrierNames[carrierCode] ?? carrierCode)
             : '';
@@ -516,18 +520,38 @@ class AppState extends ChangeNotifier {
             }
 
             // Display train number logic
-            final departureDisplayNumber = depTrainNum ?? natNum ?? intDepNum ?? intArrNum ?? '';
-            final arrivalDisplayNumber = arrTrainNum ?? natNum ?? intArrNum ?? intDepNum ?? '';
+            final departureDisplayNumber =
+                depTrainNum ?? natNum ?? intDepNum ?? intArrNum ?? '';
+            final arrivalDisplayNumber =
+                arrTrainNum ?? natNum ?? intArrNum ?? intDepNum ?? '';
 
-            // Filter out trains departed > 15 minutes ago
+            // Effective platform & track
+            final effectiveDepPlatform =
+                (st.platform != null && st.platform!.isNotEmpty)
+                    ? st.platform
+                    : depPlatform;
+            final effectiveDepTrack = (st.track != null && st.track!.isNotEmpty)
+                ? st.track
+                : depTrack;
+            final effectiveArrPlatform =
+                (st.platform != null && st.platform!.isNotEmpty)
+                    ? st.platform
+                    : arrPlatform;
+            final effectiveArrTrack = (st.track != null && st.track!.isNotEmpty)
+                ? st.track
+                : arrTrack;
+
+            // Filter out trains departed > 60 minutes ago
             if (depTime != null && i < op.stations.length - 1) {
               final depDt = DateTime.tryParse(depTime)?.toLocal();
-              final isOld = depDt != null && now.difference(depDt).inMinutes > 15;
+              final isOld =
+                  depDt != null && now.difference(depDt).inMinutes > 60;
 
               if (!isOld) {
                 departures.add(StationBoardItem(
                   time: app_date.formatDateTime(depTime),
                   trainNumber: departureDisplayNumber,
+                  trainName: trainNameRaw,
                   trainCategory: catSymbol,
                   carrier: carrierName,
                   direction: destination,
@@ -537,8 +561,8 @@ class AppState extends ChangeNotifier {
                   scheduleId: op.scheduleId,
                   orderId: op.orderId,
                   operatingDate: op.operatingDate,
-                  platform: st.platform,
-                  track: st.track,
+                  platform: effectiveDepPlatform,
+                  track: effectiveDepTrack,
                   plannedTime: app_date.formatDateTime(st.plannedDeparture),
                   actualTime: st.actualDeparture != null
                       ? app_date.formatDateTime(st.actualDeparture)
@@ -551,12 +575,14 @@ class AppState extends ChangeNotifier {
             // Arrivals
             if (arrTime != null && i > 0) {
               final arrDt = DateTime.tryParse(arrTime)?.toLocal();
-              final isOld = arrDt != null && now.difference(arrDt).inMinutes > 15;
+              final isOld =
+                  arrDt != null && now.difference(arrDt).inMinutes > 60;
 
               if (!isOld) {
                 arrivals.add(StationBoardItem(
                   time: app_date.formatDateTime(arrTime),
                   trainNumber: arrivalDisplayNumber,
+                  trainName: trainNameRaw,
                   trainCategory: catSymbol,
                   carrier: carrierName,
                   direction: origin,
@@ -566,8 +592,8 @@ class AppState extends ChangeNotifier {
                   scheduleId: op.scheduleId,
                   orderId: op.orderId,
                   operatingDate: op.operatingDate,
-                  platform: st.platform,
-                  track: st.track,
+                  platform: effectiveArrPlatform,
+                  track: effectiveArrTrack,
                   plannedTime: app_date.formatDateTime(st.plannedArrival),
                   actualTime: st.actualArrival != null
                       ? app_date.formatDateTime(st.actualArrival)
@@ -966,6 +992,45 @@ class AppState extends ChangeNotifier {
     return await api.getDisruptions();
   }
 
+  final Map<String, Future<Map<String, dynamic>>> _affectedTrainLookups = {};
+
+  Future<Map<String, dynamic>> resolveAffectedTrain(
+      Map<String, dynamic> ref) async {
+    final sid = int.tryParse('${ref['scheduleId'] ?? ref['sid']}');
+    final oid = int.tryParse('${ref['orderId'] ?? ref['oid']}');
+    final number = ref['nationalNumber'] ?? ref['trainNumber'];
+    if (number != null && number.toString().isNotEmpty) return ref;
+    if (sid == null || oid == null) return ref;
+    final date = ref['operatingDate'] ?? ref['od'];
+    for (final item in [...stationDepartures, ...stationArrivals]) {
+      if (item.scheduleId == sid &&
+          item.orderId == oid &&
+          (date == null || item.operatingDate == date) &&
+          item.trainNumber.isNotEmpty) {
+        return {
+          ...ref,
+          'nationalNumber': item.trainNumber,
+          'commercialCategorySymbol': item.trainCategory,
+          'name': item.trainName
+        };
+      }
+    }
+    final key = '$sid/$oid';
+    try {
+      final route =
+          await (_affectedTrainLookups[key] ??= api.getScheduleRoute(sid, oid));
+      return {
+        ...ref,
+        'nationalNumber': route['nationalNumber'],
+        'commercialCategorySymbol': route['commercialCategorySymbol'],
+        'name': route['name']
+      };
+    } catch (_) {
+      _affectedTrainLookups.remove(key);
+      return ref;
+    }
+  }
+
   /// Get operations statistics
   Future<OperationStatistics> getOperationStatistics({String? date}) async {
     final data = await api.getOperationStatistics(date: date);
@@ -983,11 +1048,4 @@ class AppState extends ChangeNotifier {
       return null;
     }
   }
-}
-
-/// Helper class for schedule lookup keys
-class _ScheduleKey {
-  final int scheduleId;
-  final int orderId;
-  _ScheduleKey(this.scheduleId, this.orderId);
 }

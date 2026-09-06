@@ -1,0 +1,13 @@
+﻿name: Propozycja ulepszenia
+description: Pomysł na poprawę Kolejki
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Co chcesz zrobić i czego brakuje?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Proponowane rozwiązanie

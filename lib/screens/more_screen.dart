@@ -44,7 +44,8 @@ class MoreScreen extends StatelessWidget {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const AppearanceScreen()),
+                MaterialPageRoute(
+                    builder: (context) => const AppearanceScreen()),
               );
             },
           ),
@@ -127,8 +128,8 @@ class MoreScreen extends StatelessWidget {
                 Icon(Icons.cloud_outlined, color: theme.colorScheme.primary),
             title: const Text('Usługa i źródło danych',
                 style: TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: const Text(
-                'Status API PKP PLK, wersje rozkładu i limity zapytań'),
+            subtitle:
+                const Text('Status połączenia i aktualność danych PKP PLK'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.push(

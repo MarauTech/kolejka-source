@@ -60,7 +60,8 @@ class ApiClient {
   String _buildCacheKey(String path, Map<String, dynamic>? queryParameters) {
     if (queryParameters == null || queryParameters.isEmpty) return path;
     final sortedKeys = queryParameters.keys.toList()..sort();
-    final queryString = sortedKeys.map((k) => '$k=${queryParameters[k]}').join('&');
+    final queryString =
+        sortedKeys.map((k) => '$k=${queryParameters[k]}').join('&');
     return '$path?$queryString';
   }
 
@@ -85,7 +86,7 @@ class ApiClient {
     }
 
     final cacheKey = _buildCacheKey(path, queryParameters);
-    
+
     if (_inFlightRequests.containsKey(cacheKey)) {
       if (kDebugMode) {
         debugPrint('[PDP] request deduplicated: $cacheKey');
@@ -95,7 +96,7 @@ class ApiClient {
 
     final future = _executeGet(path, queryParameters, retry);
     _inFlightRequests[cacheKey] = future;
-    
+
     try {
       return await future;
     } finally {
@@ -103,7 +104,8 @@ class ApiClient {
     }
   }
 
-  Future<Response> _executeGet(String path, Map<String, dynamic>? queryParameters, bool retry) async {
+  Future<Response> _executeGet(
+      String path, Map<String, dynamic>? queryParameters, bool retry) async {
     int attempts = 0;
     const maxRetries = 2;
 

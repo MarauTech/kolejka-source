@@ -4,6 +4,7 @@ import '../models/models.dart';
 
 class StationSearchField extends StatefulWidget {
   final String label;
+  final String? marker;
   final List<Station> stations;
   final Station? selectedStation;
   final ValueChanged<Station?> onStationSelected;
@@ -11,6 +12,7 @@ class StationSearchField extends StatefulWidget {
   const StationSearchField({
     super.key,
     required this.label,
+    this.marker,
     required this.stations,
     this.selectedStation,
     required this.onStationSelected,
@@ -37,7 +39,10 @@ class _StationSearchFieldState extends State<StationSearchField> {
     super.didUpdateWidget(oldWidget);
     if (widget.selectedStation != oldWidget.selectedStation) {
       final newText = widget.selectedStation?.name ?? '';
-      if (_controller.text != newText) {
+      if (_controller.text != newText &&
+          !(widget.marker != null &&
+              widget.selectedStation == null &&
+              _focusNode.hasFocus)) {
         _controller.text = newText;
       }
     }
@@ -82,6 +87,7 @@ class _StationSearchFieldState extends State<StationSearchField> {
       },
       onSelected: (Station selection) {
         widget.onStationSelected(selection);
+        if (widget.marker != null) _focusNode.unfocus();
       },
       fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
         return TextField(
@@ -89,10 +95,22 @@ class _StationSearchFieldState extends State<StationSearchField> {
           focusNode: focusNode,
           decoration: InputDecoration(
             labelText: widget.label,
-            prefixIcon: Icon(Icons.location_on_outlined,
-                color: theme.colorScheme.primary),
-            border: const OutlineInputBorder(
-                borderRadius: BorderRadius.all(Radius.circular(10))),
+            prefixIcon: widget.marker == null
+                ? Icon(Icons.location_on_outlined,
+                    color: theme.colorScheme.primary)
+                : SizedBox(
+                    width: 28,
+                    child: Center(
+                        child: Text(widget.marker!,
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: theme.colorScheme.primary)))),
+            prefixIconConstraints:
+                const BoxConstraints(minWidth: 28, minHeight: 40),
+            border: widget.marker == null
+                ? const OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(10)))
+                : const UnderlineInputBorder(),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             suffixIcon: controller.text.isNotEmpty
@@ -106,6 +124,11 @@ class _StationSearchFieldState extends State<StationSearchField> {
                 : null,
           ),
           onChanged: (value) {
+            if (widget.marker != null &&
+                widget.selectedStation != null &&
+                value != widget.selectedStation!.name) {
+              widget.onStationSelected(null);
+            }
             if (_debounce?.isActive ?? false) _debounce!.cancel();
             _debounce = Timer(const Duration(milliseconds: 300), () {
               if (value.isEmpty) {

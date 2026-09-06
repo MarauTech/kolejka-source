@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../app_state.dart';
@@ -16,6 +15,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   bool _isLoading = false;
   String? _errorMessage;
   OperationStatistics? _stats;
+  DateTime? _lastRefreshed;
 
   @override
   void initState() {
@@ -36,12 +36,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       if (mounted) {
         setState(() {
           _stats = stats;
+          _lastRefreshed = DateTime.now();
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = 'Nie udało się pobrać statystyk: $e';
+          _errorMessage =
+              'Nie udało się odświeżyć statusu sieci. Spróbuj ponownie.';
         });
       }
     } finally {
@@ -89,18 +91,20 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.end,
+            Wrap(
+              spacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.end,
               children: [
-                Text(
-                  count.toString(),
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 24,
-                    color: color,
-                  ),
-                ),
+                FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      count.toString(),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 24,
+                        color: color,
+                      ),
+                    )),
                 Text(
                   '$percentage%',
                   style: TextStyle(
@@ -202,6 +206,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Text(_errorMessage ?? 'Połączono z API PLK'),
+            if (_lastRefreshed != null)
+              Text(
+                  'Ostatnie odświeżenie: ${app_date.formatDateTime(_lastRefreshed!.toIso8601String())}'),
+            Text(_stats!.generatedAt == null
+                ? 'Brak informacji o aktualności danych'
+                : 'Dane z: ${app_date.formatDate(_stats!.generatedAt)} ${app_date.formatDateTime(_stats!.generatedAt)}'),
+            const SizedBox(height: 12),
             // Total Trains Summary Card
             Card(
               elevation: 2,
@@ -259,7 +271,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               physics: const NeverScrollableScrollPhysics(),
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
-              childAspectRatio: 1.35,
+              mainAxisExtent: 155,
               children: [
                 _buildStatCard('W trasie', _stats!.inProgress, total,
                     Colors.blue, Icons.directions_railway),
@@ -314,32 +326,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               ),
 
             const SizedBox(height: 16),
-
-            // Raw API Data
-            Card(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              child: ExpansionTile(
-                title: const Text('Pełne dane API (JSON)',
-                    style:
-                        TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                children: [
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: SelectableText(
-                      const JsonEncoder.withIndent('  ').convert(_stats!.raw),
-                      style: const TextStyle(
-                          fontFamily: 'monospace', fontSize: 11),
-                    ),
-                  ),
-                ],
-              ),
-            ),
 
             if (_stats!.generatedAt != null) ...[
               const SizedBox(height: 16),

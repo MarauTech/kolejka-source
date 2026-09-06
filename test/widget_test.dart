@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:trainly/models/train_position_resolver.dart';
 import 'package:trainly/utils/date_utils.dart' as app_date;
 import 'package:trainly/models/models.dart';
 import 'package:trainly/app_state.dart';
@@ -123,19 +124,34 @@ void main() {
         raw: {},
       );
 
-      final pos = TrainPositionInfo.compute(
+      final pos = TrainPositionResolver.resolve(
         operation: op,
         routeStations: [
-          StationOnRoute(stationId: 10, orderNumber: 1, raw: {}),
-          StationOnRoute(stationId: 20, orderNumber: 2, raw: {}),
-          StationOnRoute(stationId: 30, orderNumber: 3, raw: {}),
+          StationOnRoute(
+              stationId: 10,
+              orderNumber: 1,
+              arrivalTime: '2025-04-14T10:00:00',
+              departureTime: '2025-04-14T10:02:00',
+              raw: {}),
+          StationOnRoute(
+              stationId: 20,
+              orderNumber: 2,
+              arrivalTime: '2025-04-14T10:30:00',
+              departureTime: '2025-04-14T10:35:00',
+              raw: {}),
+          StationOnRoute(
+              stationId: 30,
+              orderNumber: 3,
+              arrivalTime: '2025-04-14T11:00:00',
+              raw: {}),
         ],
-        stationNames: {10: 'Gdańsk', 20: 'Tczew', 30: 'Malbork'},
+        stationNames: {10: 'Gdansk', 20: 'Tczew', 30: 'Malbork'},
+        now: DateTime.parse('2025-04-14T10:32:00'),
       );
 
-      expect(pos.type, TrainStatusType.betweenStations);
-      expect(pos.currentStationId, 20);
-      expect(pos.description, contains('Ostatnia stacja: Tczew'));
+      expect(pos.status, TrainStatusType.atStation);
+      expect(pos.currentStation?.stationId, 20);
+      expect(pos.description, contains('Na stacji: Tczew'));
     });
 
     test('Calculates betweenStations status correctly', () {
@@ -168,23 +184,34 @@ void main() {
         raw: {},
       );
 
-      final pos = TrainPositionInfo.compute(
+      final pos = TrainPositionResolver.resolve(
         operation: op,
         routeStations: [
-          StationOnRoute(stationId: 10, orderNumber: 1, raw: {}),
-          StationOnRoute(stationId: 20, orderNumber: 2, raw: {}),
+          StationOnRoute(
+              stationId: 10,
+              orderNumber: 1,
+              arrivalTime: '2025-04-14T10:00:00',
+              departureTime: '2025-04-14T10:02:00',
+              raw: {}),
+          StationOnRoute(
+              stationId: 20,
+              orderNumber: 2,
+              arrivalTime: '2025-04-14T11:30:00',
+              raw: {}),
         ],
-        stationNames: {10: 'Gdańsk', 20: 'Tczew'},
-        nowOverride: DateTime.parse('2025-04-14T11:00:00'),
+        stationNames: {10: 'Gdansk', 20: 'Tczew'},
+        now: DateTime.parse('2025-04-14T11:00:00'),
       );
 
-      expect(pos.type, TrainStatusType.betweenStations);
-      expect(pos.currentStationId, 10);
-      expect(pos.nextStationId, 20);
-      expect(pos.description, contains('Ostatnia stacja: Gdańsk'));
+      expect(pos.status, TrainStatusType.betweenStations);
+      expect(pos.previousStation?.stationId, 10);
+      expect(pos.nextStation?.stationId, 20);
+      expect(pos.description, contains('W drodze do: Tczew'));
     });
 
-    test('IC 8314 Regression: Future station cannot be marked as reached even if isConfirmed', () {
+    test(
+        'IC 8314 Regression: Future station cannot be marked as reached even if isConfirmed',
+        () {
       final op = TrainOperation(
         scheduleId: 1,
         orderId: 1,
@@ -201,7 +228,7 @@ void main() {
             raw: {},
           ),
           OperationStation(
-            stationId: 20, // Kędzierzyn
+            stationId: 20, // Kedzierzyn
             actualSequenceNumber: 20,
             actualArrival: '2026-09-06T12:00:00',
             actualDeparture: '2026-09-06T12:05:00',
@@ -210,11 +237,11 @@ void main() {
             raw: {},
           ),
           OperationStation(
-            stationId: 30, // Przemyśl (future!)
+            stationId: 30, // Przemysl (future!)
             actualSequenceNumber: 28,
             actualArrival: '2026-09-06T16:51:00', // This time is in the future
             actualDeparture: null,
-            isConfirmed: true, // Suppose API mistakenly returns true or it's a confirmed planned track
+            isConfirmed: true, // Suppose API mistakenly returns true
             isCancelled: false,
             raw: {},
           ),
@@ -222,21 +249,35 @@ void main() {
         raw: {},
       );
 
-      final pos = TrainPositionInfo.compute(
+      final pos = TrainPositionResolver.resolve(
         operation: op,
         routeStations: [
-          StationOnRoute(stationId: 10, orderNumber: 1, raw: {}),
-          StationOnRoute(stationId: 20, orderNumber: 20, raw: {}),
-          StationOnRoute(stationId: 30, orderNumber: 28, raw: {}),
+          StationOnRoute(
+              stationId: 10,
+              orderNumber: 1,
+              arrivalTime: '2026-09-06T06:40:00',
+              departureTime: '2026-09-06T06:42:00',
+              raw: {}),
+          StationOnRoute(
+              stationId: 20,
+              orderNumber: 20,
+              arrivalTime: '2026-09-06T12:00:00',
+              departureTime: '2026-09-06T12:05:00',
+              raw: {}),
+          StationOnRoute(
+              stationId: 30,
+              orderNumber: 28,
+              arrivalTime: '2026-09-06T16:51:00',
+              raw: {}),
         ],
-        stationNames: {10: 'Szczecin', 20: 'Kędzierzyn-Koźle', 30: 'Przemyśl Główny'},
-        nowOverride: DateTime.parse('2026-09-06T12:20:00'), // Current time is 12:20
+        stationNames: {10: 'Szczecin', 20: 'Kedzierzyn-Kozle', 30: 'Przemysl'},
+        now: DateTime.parse('2026-09-06T12:20:00'), // Current time is 12:20
       );
 
-      expect(pos.currentStationId, 20); // Should stop at Kędzierzyn-Koźle
-      expect(pos.nextStationId, 30);
-      expect(pos.description, contains('Kędzierzyn-Koźle'));
-      expect(pos.description, isNot(contains('Przemyśl Główny (odjazd'))); // Przemyśl is not the last station
+      expect(pos.previousStation?.stationId,
+          20); // Should be between Kedzierzyn and Przemysl
+      expect(pos.nextStation?.stationId, 30);
+      expect(pos.description, contains('W drodze do: Przemysl'));
     });
   });
 
@@ -277,9 +318,10 @@ void main() {
           .whereType<File>()
           .where((f) => f.path.endsWith('.dart'));
 
-      // Regex matching common emoji unicode ranges and forbidden symbols
+      // Plain text route arrow (→) is part of the requested railway notation,
+      // not an emoji. Decorative pictographs remain forbidden.
       final emojiPattern = RegExp(
-        r'[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[↔→←↑↓•]',
+        r'[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[↔←↑↓•]',
         unicode: true,
       );
 

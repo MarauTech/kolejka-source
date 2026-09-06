@@ -1,18 +1,23 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../models/models.dart';
-import '../widgets/route_stop.dart';
+import '../models/train_position_resolver.dart';
+import '../models/station_mapping.dart';
+import '../models/route_presentation.dart';
+import '../utils/category_utils.dart';
 import '../utils/date_utils.dart' as app_date;
+import '../widgets/route_stop.dart';
 
 class TrainDetailsScreen extends StatefulWidget {
   final ConnectionResult result;
+  final DateTime Function()? now;
 
   const TrainDetailsScreen({
     super.key,
     required this.result,
+    this.now,
   });
 
   @override
@@ -25,11 +30,17 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
   bool _routeLoadError = false;
   TrainOperation? _operation;
   TrainRoute? _fullRoute;
+  bool _showPreviousStations = false; // State for collapsible past stations
 
   @override
   void initState() {
     super.initState();
-    _operation = widget.result.operation;
+    final initialOperation = widget.result.operation;
+    _operation = initialOperation != null &&
+            operationMatchesRoute(
+                initialOperation, widget.result.route, _operatingDate)
+        ? initialOperation
+        : null;
     _fullRoute = widget.result.route;
     if (_fullRoute!.stations.isEmpty) {
       _fullRoute = null; // force fetch if empty
@@ -49,64 +60,90 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
     super.dispose();
   }
 
+  String _getShortCarrierName(String? rawName) {
+    if (rawName == null) return '';
+    if (rawName.contains('PKP Intercity')) return 'PKP Intercity';
+    if (rawName.contains('POLREGIO')) return 'POLREGIO';
+    if (rawName.contains('Koleje Mazowieckie')) return 'Koleje Mazowieckie';
+    if (rawName.contains('Koleje Wielkopolskie')) return 'Koleje Wielkopolskie';
+    if (rawName.contains('Koleje \u015al\u0105skie')) {
+      return 'Koleje \u015al\u0105skie';
+    }
+    if (rawName.contains('Koleje Ma\u0142opolskie')) {
+      return 'Koleje Ma\u0142opolskie';
+    }
+    if (rawName.contains('Koleje Dolno\u015bl\u0105skie')) {
+      return 'Koleje Dolno\u015bl\u0105skie';
+    }
+    if (rawName.contains('\u0141\u00f3dzka Kolej Aglomeracyjna')) {
+      return '\u0141KA';
+    }
+    return rawName;
+  }
+
+  String get _operatingDate {
+    if (widget.result.operatingDate.isNotEmpty) {
+      return widget.result.operatingDate;
+    }
+    final date = widget.result.operation?.operatingDate;
+    if (date != null && date.isNotEmpty) return date;
+    final dates = widget.result.route.operatingDates;
+    return dates.length == 1
+        ? dates.single
+        : app_date.formatDateForApi(widget.now?.call() ?? DateTime.now());
+  }
+
   Future<void> _fetchData() async {
-    if (!mounted) return;
+    if (!mounted || _isLoading) return;
     setState(() {
       _isLoading = true;
       _routeLoadError = false;
     });
-
     final appState = context.read<AppState>();
-    final operatingDate = widget.result.operatingDate.isNotEmpty
-        ? widget.result.operatingDate
-        : app_date.formatDateForApi(DateTime.now());
-
     try {
-      final futures = <Future>[];
-
-      // 1. Fetch full route if missing
+      // Fetch the schedule first: it can supply the distinct train-order ID.
       if (_fullRoute == null) {
-        futures.add(appState.api.getScheduleRoute(
-          widget.result.route.scheduleId,
-          widget.result.route.orderId,
-        ).then((routeResp) {
-          if (routeResp.isNotEmpty && mounted) {
-            setState(() {
-              _fullRoute = TrainRoute.fromJson(routeResp);
-            });
+        try {
+          final data = await appState.api.getScheduleRoute(
+              widget.result.route.scheduleId, widget.result.route.orderId);
+          if (!mounted) return;
+          final fetched = TrainRoute.fromJson(data);
+          if (fetched.scheduleId == widget.result.route.scheduleId &&
+              fetched.orderId == widget.result.route.orderId) {
+            setState(() => _fullRoute = fetched);
+          } else {
+            setState(() => _routeLoadError = true);
           }
-        }).catchError((e) {
-          debugPrint('[TrainDetails] Error fetching route: $e');
+        } catch (error) {
+          debugPrint('[TrainDetails] Route unavailable: $error');
           if (mounted) setState(() => _routeLoadError = true);
-        }));
-      }
-
-      // 2. Fetch realtime operations
-      futures.add(appState.getTrainOperation(
-        widget.result.route.scheduleId,
-        widget.result.route.orderId,
-        operatingDate,
-      ).then((updatedOp) {
-        if (mounted && updatedOp != null) {
-          setState(() {
-            _operation = updatedOp;
-          });
         }
-      }).catchError((e) {
-        debugPrint('[TrainDetails] Error fetching realtime: $e');
-      }));
-
-      if (futures.isNotEmpty) {
-        await Future.wait(futures);
       }
+      if (!mounted) return;
+      final route = _fullRoute ?? widget.result.route;
+      final trainOrderId = route.trainOrderId ?? _operation?.trainOrderId;
+      final updated = await appState.getTrainOperation(
+          route.scheduleId,
+          trainOrderId != null && trainOrderId > 0
+              ? trainOrderId
+              : route.orderId,
+          _operatingDate);
+      if (!mounted) return;
+      setState(() {
+        _operation = updated != null &&
+                operationMatchesRoute(updated, route, _operatingDate)
+            ? updated
+            : null;
+      });
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Widget _buildDelayBadge(int delay, bool isCancelled) {
+    if (_operation == null) {
+      return const Text('Wg rozkładu', style: TextStyle(fontSize: 12));
+    }
     if (isCancelled) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -122,7 +159,7 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
 
     Color color;
     String text;
-    if (delay == 0) {
+    if (delay <= 0) {
       color = Colors.green;
       text = 'Planowo';
     } else if (delay <= 10) {
@@ -151,379 +188,298 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
     final theme = Theme.of(context);
     final route = _fullRoute ?? widget.result.route;
 
-    // Real-time map by stationId
-    final Map<int, OperationStation> opStationsMap = {};
-    if (_operation != null) {
-      for (final st in _operation!.stations) {
-        opStationsMap[st.stationId] = st;
-      }
-    }
+    final isCancelled = _operation?.trainStatus == 'X';
 
-    // Determine current delay
-    int currentDelay = widget.result.delay;
-    if (_operation != null) {
-      for (final st in _operation!.stations) {
-        final d = st.departureDelayMinutes ?? st.arrivalDelayMinutes ?? 0;
-        if (d > currentDelay) currentDelay = d;
-      }
-    }
-
-    final isCancelled =
-        _operation?.trainStatus == 'X' || widget.result.isCancelled;
-
-    String relStart = widget.result.relationStart;
-    String relEnd = widget.result.relationEnd;
+    String relStart = widget.result.fromStationName;
+    String relEnd = widget.result.toStationName;
 
     if (route.stations.isNotEmpty) {
-      relStart = appState.getStationName(route.stations.first.stationId);
-      relEnd = appState.getStationName(route.stations.last.stationId);
+      relStart = appState.stationNames[route.stations.first.stationId] ??
+          widget.result.fromStationName;
+      relEnd = appState.stationNames[route.stations.last.stationId] ??
+          widget.result.toStationName;
     }
 
-    // Compute live train position
-    final positionInfo = TrainPositionInfo.compute(
+    // NEW: Compute live train position using TrainPositionResolver
+    final positionResult = TrainPositionResolver.resolve(
       operation: _operation,
       routeStations: route.stations,
       stationNames: appState.stationNames,
+      operatingDate: widget.result.operatingDate.isNotEmpty
+          ? widget.result.operatingDate
+          : _operation?.operatingDate,
+      now: widget.now?.call() ?? DateTime.now(),
     );
-    
-    // DEBUG LOGS
-    debugPrint('[PDP ROUTE] origin: $relStart');
-    debugPrint('[PDP ROUTE] destination: $relEnd');
-    debugPrint('[PDP OP] trainStatus: ${_operation?.trainStatus}');
-    if (_operation != null && _operation!.stations.isNotEmpty) {
-      final debugSt = _operation!.stations.last;
-      debugPrint('[PDP OP] station: ${debugSt.stationId}');
-      debugPrint('[PDP OP] plannedArrival: (n/a directly in op)');
-      debugPrint('[PDP OP] plannedDeparture: (n/a directly in op)');
-      debugPrint('[PDP OP] actualArrival: ${debugSt.actualArrival}');
-      debugPrint('[PDP OP] actualDeparture: ${debugSt.actualDeparture}');
-      debugPrint('[PDP OP] isConfirmed: ${debugSt.isConfirmed}');
-      debugPrint('[PDP OP] isCancelled: ${debugSt.isCancelled}');
-    }
-    debugPrint('[PDP OP] selected lastReached: ${positionInfo.currentStationName}');
-    debugPrint('[PDP OP] selected nextStation: ${positionInfo.nextStationName}');
 
-    // Identify user segment indices if available
-    int userFromIdx = -1;
-    int userToIdx = -1;
-    for (int i = 0; i < route.stations.length; i++) {
-      if (route.stations[i].stationId == widget.result.fromStationId &&
-          userFromIdx == -1) {
-        userFromIdx = i;
-      }
-      if (route.stations[i].stationId == widget.result.toStationId &&
-          userToIdx == -1) {
-        userToIdx = i;
+    int currentDelay = positionResult.delayMinutes;
+
+    // Live position banner color logic
+    Color positionBannerColor = theme.colorScheme.primaryContainer;
+    Color positionTextColor = theme.colorScheme.onPrimaryContainer;
+    if (positionResult.source == PositionSource.estimatedWithDelay) {
+      positionBannerColor = Colors.orange.withValues(alpha: 0.2);
+      positionTextColor = Colors.orange.shade800;
+      if (theme.brightness == Brightness.dark) {
+        positionTextColor = Colors.orange.shade200;
       }
     }
-    final hasUserSegment =
-        userFromIdx != -1 && userToIdx != -1 && userFromIdx < userToIdx;
+
+    // Find the index of current/next station in the route list
+    int currentActiveIndex = -1;
+    if (positionResult.status == TrainStatusType.atStation &&
+        positionResult.currentStation != null) {
+      currentActiveIndex =
+          route.stations.indexOf(positionResult.currentStation!);
+    } else if (positionResult.status == TrainStatusType.betweenStations &&
+        positionResult.nextStation != null) {
+      currentActiveIndex = route.stations.indexOf(positionResult.nextStation!);
+    } else if (positionResult.status == TrainStatusType.completed) {
+      currentActiveIndex = route.stations.length;
+    }
+
+    // Determine how many passed stations to hide by default
+    // We keep the active station and the one immediately before it visible, hide everything before that.
+    int hiddenPassedCount = 0;
+    if (currentActiveIndex > 1) {
+      hiddenPassedCount = currentActiveIndex - 1;
+    }
+
+    final isDark = theme.brightness == Brightness.dark;
+    final background =
+        isDark ? const Color(0xFF191D25) : theme.colorScheme.surface;
+    final number = widget.result.trainNumber;
+    final category = widget.result.commercialCategory;
+    final trainName = widget.result.trainName;
+    final visibleStart = _showPreviousStations ? 0 : hiddenPassedCount;
+    final estimated = positionResult.source != PositionSource.live;
+    String stationName(StationOnRoute station) =>
+        appState.stationNames[station.stationId] ?? 'Stacja bez nazwy';
 
     return Scaffold(
+      backgroundColor: background,
       appBar: AppBar(
-        title: Text(
-          [
-            if (widget.result.commercialCategory.isNotEmpty)
-              widget.result.commercialCategory,
-            if (widget.result.trainNumber.isNotEmpty) widget.result.trainNumber,
-            if (widget.result.trainName.isNotEmpty)
-              '"${widget.result.trainName}"',
-          ].join(' '),
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        ),
-        actions: [
-          IconButton(
-            icon: _isLoading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh),
-            onPressed: _isLoading ? null : _fetchData,
-            tooltip: 'Odśwież dane trasy',
-          ),
-        ],
-      ),
+          backgroundColor: background,
+          title: Text([category, number].where((s) => s.isNotEmpty).join(' '),
+              style:
+                  const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+          actions: [
+            IconButton(
+                onPressed: _isLoading ? null : _fetchData,
+                tooltip: 'Odśwież dane trasy',
+                icon: _isLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.refresh))
+          ]),
       body: RefreshIndicator(
-        onRefresh: _fetchData,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Train Header Card
-              Card(
-                margin: const EdgeInsets.all(12),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              widget.result.carrierName,
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          _buildDelayBadge(currentDelay, isCancelled),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Relacja: $relStart - $relEnd',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: theme.colorScheme.onSurface,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (widget.result.operatingDate.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          'Data kursowania: ${widget.result.operatingDate}',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: theme.colorScheme.onSurfaceVariant),
-                        ),
-                      ],
-                      const SizedBox(height: 10),
-                      const Divider(height: 1),
-                      const SizedBox(height: 10),
-
-                      // Live Position Banner
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primaryContainer
-                              .withValues(alpha: 0.6),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.directions_train,
-                                size: 20, color: theme.colorScheme.primary),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Aktualny etap trasy',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: theme.colorScheme.primary,
-                                    ),
-                                  ),
-                                  Text(
-                                    positionInfo.description,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold,
-                                      color:
-                                          theme.colorScheme.onPrimaryContainer,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Segment hint if applicable
-              if (hasUserSegment)
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 12,
-                        height: 12,
-                        decoration: BoxDecoration(
-                          color:
-                              theme.colorScheme.primary.withValues(alpha: 0.25),
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Twój odcinek: ${widget.result.fromStationName} - ${widget.result.toStationName}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-              // Route Timeline
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Text(
-                  _isLoading && _fullRoute == null
-                      ? 'Pobieranie trasy...'
-                      : _routeLoadError
-                          ? 'Nie udało się pobrać trasy'
-                          : route.stations.isEmpty
-                              ? 'Trasa nie zawiera stacji'
-                              : 'Pełna trasa pociągu (${route.stations.length} stacji)',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-
-              if (_isLoading && _fullRoute == null)
-                const Padding(
-                  padding: EdgeInsets.all(32.0),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (_routeLoadError)
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Center(
-                    child: Icon(Icons.error_outline,
-                        color: theme.colorScheme.error, size: 48),
-                  ),
-                )
-              else if (route.stations.isNotEmpty)
-                Card(
-                  margin: const EdgeInsets.symmetric(horizontal: 12),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Column(
-                      children: List.generate(route.stations.length, (index) {
-                        final stop = route.stations[index];
-                        final stationName =
-                            appState.getStationName(stop.stationId);
-                        final realTimeStop = opStationsMap[stop.stationId];
-
-                      final isUserSegment = hasUserSegment &&
-                          (index >= userFromIdx && index <= userToIdx);
-                      final isPassed = realTimeStop?.actualDeparture != null;
-                      final hasTrainNow =
-                          positionInfo.type == TrainStatusType.atStation &&
-                              positionInfo.currentStationId == stop.stationId;
-                      final isBetweenNext = positionInfo.type ==
-                              TrainStatusType.betweenStations &&
-                          positionInfo.currentStationId == stop.stationId;
-
-                      return RouteStopWidget(
-                        stationName: stationName,
-                        scheduleData: stop,
-                        realtimeData: realTimeStop,
-                        isFirst: index == 0,
-                        isLast: index == route.stations.length - 1,
-                        isHighlighted: isUserSegment,
-                        isPassed: isPassed,
-                        hasTrainNow: hasTrainNow,
-                        isBetweenNext: isBetweenNext,
-                      );
-                    }),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Technical Details Expansion Tile
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Card(
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  child: ExpansionTile(
-                    title: const Text(
-                      'Szczegóły techniczne',
-                      style:
-                          TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                    ),
-                    subtitle: Text(
-                      'Schedule ID: ${route.scheduleId}, Order ID: ${route.orderId}',
-                      style: TextStyle(
-                          fontSize: 12, color: theme.colorScheme.outline),
-                    ),
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
+          onRefresh: _fetchData,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                      child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Identyfikator rozkładu: ${route.scheduleId}',
-                                style: const TextStyle(fontSize: 12)),
-                            Text('Identyfikator zamówienia: ${route.orderId}',
-                                style: const TextStyle(fontSize: 12)),
-                            if (route.trainOrderId != null)
-                              Text(
-                                  'Identyfikator pociągu: ${route.trainOrderId}',
-                                  style: const TextStyle(fontSize: 12)),
-                            if (_operation?.trainOrderId != null)
-                              Text(
-                                  'Train Order ID wykonania: ${_operation!.trainOrderId}',
-                                  style: const TextStyle(fontSize: 12)),
-                            const SizedBox(height: 8),
-                            const Text('Surowy JSON z API:',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.bold, fontSize: 12)),
-                            const SizedBox(height: 4),
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color:
-                                    theme.colorScheme.surfaceContainerHighest,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: SelectableText(
-                                const JsonEncoder.withIndent('  ').convert({
-                                  'route': route.raw,
-                                  if (_operation != null)
-                                    'operation': _operation!.raw,
-                                }),
+                            Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  if (category.isNotEmpty)
+                                    Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                            color: categoryColor(category,
+                                                isDark: isDark),
+                                            borderRadius:
+                                                BorderRadius.circular(4)),
+                                        child: Text(category,
+                                            style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.bold,
+                                                color: categoryTextColor(
+                                                    category,
+                                                    isDark: isDark)))),
+                                  Text(number,
+                                      style: theme.textTheme.titleLarge
+                                          ?.copyWith(
+                                              fontWeight: FontWeight.w700)),
+                                  _buildDelayBadge(currentDelay, isCancelled),
+                                ]),
+                            if (trainName.isNotEmpty)
+                              Padding(
+                                  padding: const EdgeInsets.only(top: 6),
+                                  child: Text(trainName,
+                                      style: theme.textTheme.titleMedium
+                                          ?.copyWith(
+                                              fontWeight: FontWeight.w600))),
+                            const SizedBox(height: 12),
+                            Text('$relStart \u2192 $relEnd',
                                 style: const TextStyle(
-                                    fontFamily: 'monospace', fontSize: 11),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 24),
-            ],
-          ),
-        ),
-      ),
+                                    fontSize: 15, fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 6),
+                            Wrap(spacing: 14, runSpacing: 4, children: [
+                              Text(
+                                  _getShortCarrierName(
+                                      widget.result.carrierName),
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color:
+                                          theme.colorScheme.onSurfaceVariant)),
+                              Text(app_date.formatDate(_operatingDate),
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color:
+                                          theme.colorScheme.onSurfaceVariant)),
+                            ]),
+                          ])),
+                  Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 12),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                          color: positionBannerColor,
+                          borderRadius: BorderRadius.circular(6)),
+                      child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.directions_train_outlined,
+                                size: 18, color: positionTextColor),
+                            const SizedBox(width: 8),
+                            Expanded(
+                                child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                  Text('Aktualny etap trasy',
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          color: positionTextColor)),
+                                  const SizedBox(height: 4),
+                                  Text(positionResult.description,
+                                      style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: positionTextColor)),
+                                  if (positionResult.previousStation != null &&
+                                      positionResult.nextStation != null)
+                                    Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                            '${stationName(positionResult.previousStation!)} \u2192 ${stationName(positionResult.nextStation!)}',
+                                            style: TextStyle(
+                                                fontSize: 12,
+                                                color: positionTextColor))),
+                                  if (estimated &&
+                                      (positionResult.status ==
+                                              TrainStatusType.betweenStations ||
+                                          positionResult.status ==
+                                              TrainStatusType.atStation))
+                                    Padding(
+                                        padding: const EdgeInsets.only(top: 5),
+                                        child: Text(
+                                            'Pozycja szacowana wg rozkładu',
+                                            style: TextStyle(
+                                                fontSize: 11,
+                                                color: positionTextColor))),
+                                ])),
+                          ])),
+                  Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 22, 16, 8),
+                      child: Text(
+                          _isLoading && _fullRoute == null
+                              ? 'Pobieranie trasy...'
+                              : _routeLoadError
+                                  ? 'Nie udało się pobrać trasy'
+                                  : 'Pełna trasa pociągu (${route.stations.length} stacji)',
+                          style: theme.textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w700))),
+                  if (_isLoading && _fullRoute == null)
+                    const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Center(child: CircularProgressIndicator()))
+                  else if (_routeLoadError)
+                    Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: TextButton.icon(
+                            onPressed: _fetchData,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Spróbuj ponownie')))
+                  else if (route.stations.isEmpty)
+                    const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text('Trasa nie zawiera stacji'))
+                  else ...[
+                    if (hiddenPassedCount > 0)
+                      Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: TextButton.icon(
+                              onPressed: () => setState(() =>
+                                  _showPreviousStations =
+                                      !_showPreviousStations),
+                              icon: Icon(
+                                  _showPreviousStations
+                                      ? Icons.expand_less
+                                      : Icons.expand_more,
+                                  size: 18),
+                              label: Text(_showPreviousStations
+                                  ? 'Ukryj poprzednie stacje'
+                                  : 'Pokaż poprzednie stacje ($hiddenPassedCount)'))),
+                    Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: AnimatedSize(
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeOutCubic,
+                            alignment: Alignment.topCenter,
+                            child: Column(children: [
+                              for (var index = visibleStart;
+                                  index < route.stations.length;
+                                  index++)
+                                RouteStopWidget(
+                                  key: ValueKey('route-stop-$index'),
+                                  stationName:
+                                      stationName(route.stations[index]),
+                                  scheduleData: route.stations[index],
+                                  realtimeData: operationForStop(
+                                      route.stations[index],
+                                      route.stations,
+                                      _operation?.stations ?? []),
+                                  operatingDate: _operatingDate,
+                                  index: index,
+                                  isFirst: index == 0,
+                                  isLast: index == route.stations.length - 1,
+                                  startsVisibleRoute: index == visibleStart,
+                                  isPassed: index < currentActiveIndex,
+                                  hasTrainNow: positionResult.status ==
+                                          TrainStatusType.atStation &&
+                                      identical(positionResult.currentStation,
+                                          route.stations[index]),
+                                  isBetweenNext: positionResult.status ==
+                                          TrainStatusType.betweenStations &&
+                                      identical(positionResult.nextStation,
+                                          route.stations[index]),
+                                  isTrainAtPrevious: positionResult.status ==
+                                          TrainStatusType.betweenStations &&
+                                      identical(positionResult.previousStation,
+                                          route.stations[index]),
+                                  notice: routeStopNotice(
+                                      route.stations[index],
+                                      index > 0
+                                          ? route.stations[index - 1]
+                                          : null,
+                                      destination: appState.stationNames[
+                                          route.stations.last.stationId]),
+                                ),
+                            ]))),
+                  ],
+                  const SizedBox(height: 32),
+                ]),
+          )),
     );
   }
 }
