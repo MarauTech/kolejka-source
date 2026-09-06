@@ -19,20 +19,24 @@ class ResultsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '$fromStationName → $toStationName',
+              '$fromStationName - $toStationName',
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
             Text(
               date,
               style: TextStyle(
                 fontSize: 12,
-                color: Colors.grey.shade600,
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -45,17 +49,19 @@ class ResultsScreen extends StatelessWidget {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.search_off, size: 64, color: Colors.grey.shade400),
+                    Icon(Icons.search_off,
+                        size: 64, color: theme.colorScheme.outlineVariant),
                     const SizedBox(height: 16),
                     const Text(
                       'Nie znaleziono połączeń',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       'Spróbuj zmienić datę lub godzinę wyszukiwania.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey.shade600),
+                      style: TextStyle(color: theme.colorScheme.outline),
                     ),
                   ],
                 ),
@@ -72,7 +78,8 @@ class ResultsScreen extends StatelessWidget {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => TrainDetailsScreen(result: result),
+                        builder: (context) =>
+                            TrainDetailsScreen(result: result),
                       ),
                     );
                   },

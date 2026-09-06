@@ -73,6 +73,7 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
   }
 
   void _showDetails(BuildContext context, Disruption item, AppState appState) {
+    final theme = Theme.of(context);
     final typeName = _disruptionTypes[item.disruptionTypeCode] ??
         item.disruptionTypeCode ??
         'Utrudnienie w ruchu';
@@ -104,7 +105,7 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
                       height: 4,
                       margin: const EdgeInsets.only(bottom: 16),
                       decoration: BoxDecoration(
-                        color: Colors.grey[400],
+                        color: theme.colorScheme.outlineVariant,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -114,16 +115,18 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
+                          color: Colors.orange.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
+                        child: const Icon(Icons.warning_amber_rounded,
+                            color: Colors.orange, size: 28),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           typeName,
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ],
@@ -132,20 +135,21 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
 
                   if (startName.isNotEmpty || endName.isNotEmpty) ...[
                     Card(
-                      color: Colors.grey.shade50,
                       child: Padding(
                         padding: const EdgeInsets.all(12),
                         child: Row(
                           children: [
-                            const Icon(Icons.linear_scale, color: Color(0xFF003366)),
+                            Icon(Icons.route_outlined,
+                                color: theme.colorScheme.primary),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 [
                                   if (startName.isNotEmpty) startName,
                                   if (endName.isNotEmpty) endName,
-                                ].join(' ↔ '),
-                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                                ].join(' - '),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600, fontSize: 14),
                               ),
                             ),
                           ],
@@ -169,7 +173,8 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
                   if (item.affectedRoutes.isNotEmpty) ...[
                     Text(
                       'Dotknięte pociągi (${item.affectedRoutes.length}):',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 14),
                     ),
                     const SizedBox(height: 6),
                     Wrap(
@@ -178,7 +183,8 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
                       children: item.affectedRoutes.take(15).map((r) {
                         final toid = r['trainOrderId'] ?? r['orderId'] ?? '';
                         return Chip(
-                          label: Text('Pociąg $toid', style: const TextStyle(fontSize: 12)),
+                          label: Text('Pociąg $toid',
+                              style: const TextStyle(fontSize: 12)),
                           visualDensity: VisualDensity.compact,
                         );
                       }).toList(),
@@ -188,18 +194,21 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
 
                   // Raw API JSON
                   ExpansionTile(
-                    title: const Text('Pełne dane API (JSON)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                    title: const Text('Pełne dane API (JSON)',
+                        style: TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.bold)),
                     children: [
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
+                          color: theme.colorScheme.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: SelectableText(
                           const JsonEncoder.withIndent('  ').convert(item.raw),
-                          style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                          style: const TextStyle(
+                              fontFamily: 'monospace', fontSize: 11),
                         ),
                       ),
                     ],
@@ -219,14 +228,15 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Utrudnienia w ruchu', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Utrudnienia w ruchu',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
             icon: _isLoading
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.refresh),
             onPressed: _isLoading ? null : _loadDisruptions,
@@ -239,6 +249,8 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
   }
 
   Widget _buildBody(AppState appState) {
+    final theme = Theme.of(context);
+
     if (_isLoading && _disruptions.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -250,12 +262,13 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, size: 48, color: Colors.red),
+              Icon(Icons.error_outline,
+                  size: 48, color: theme.colorScheme.error),
               const SizedBox(height: 12),
               Text(
                 _errorMessage!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.red),
+                style: TextStyle(color: theme.colorScheme.error),
               ),
               const SizedBox(height: 16),
               FilledButton(
@@ -278,7 +291,8 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
             Center(
               child: Column(
                 children: [
-                  Icon(Icons.check_circle_outline, size: 64, color: Colors.green.shade400),
+                  Icon(Icons.check_circle_outline,
+                      size: 64, color: Colors.green.shade400),
                   const SizedBox(height: 16),
                   const Text(
                     'Brak aktualnych utrudnień',
@@ -287,7 +301,7 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
                   const SizedBox(height: 8),
                   Text(
                     'Ruch pociągów odbywa się bez zakłóceń.',
-                    style: TextStyle(color: Colors.grey.shade600),
+                    style: TextStyle(color: theme.colorScheme.outline),
                   ),
                 ],
               ),
@@ -310,12 +324,14 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
           final startName = _getStationName(item.startStationId, appState);
           final endName = _getStationName(item.endStationId, appState);
           final msg = item.message ?? '';
-          final preview = msg.length > 120 ? '${msg.substring(0, 120)}...' : msg;
+          final preview =
+              msg.length > 120 ? '${msg.substring(0, 120)}...' : msg;
 
           return Card(
             elevation: 1,
             margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               onTap: () => _showDetails(context, item, appState),
@@ -326,12 +342,14 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 20),
+                        const Icon(Icons.warning_amber_rounded,
+                            color: Colors.orange, size: 20),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             typeName,
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 15),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -344,9 +362,9 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
                         [
                           if (startName.isNotEmpty) startName,
                           if (endName.isNotEmpty) endName,
-                        ].join(' ↔ '),
-                        style: const TextStyle(
-                          color: Color(0xFF003366),
+                        ].join(' - '),
+                        style: TextStyle(
+                          color: theme.colorScheme.primary,
                           fontWeight: FontWeight.w600,
                           fontSize: 13,
                         ),
@@ -356,7 +374,9 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
                       const SizedBox(height: 6),
                       Text(
                         preview,
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: theme.colorScheme.onSurfaceVariant),
                       ),
                     ],
                     const SizedBox(height: 8),
@@ -366,13 +386,25 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
                         if (item.affectedRoutes.isNotEmpty)
                           Text(
                             'Dotyczy ${item.affectedRoutes.length} pociągów',
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                            style: TextStyle(
+                                fontSize: 12, color: theme.colorScheme.outline),
                           )
                         else
                           const SizedBox(),
-                        const Text(
-                          'Więcej szczegółów →',
-                          style: TextStyle(fontSize: 12, color: Color(0xFF003366), fontWeight: FontWeight.bold),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Szczegóły',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: theme.colorScheme.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Icon(Icons.chevron_right,
+                                size: 16, color: theme.colorScheme.primary),
+                          ],
                         ),
                       ],
                     ),

@@ -1,13 +1,13 @@
+// Polish date and time utilities for Trainly
+
 /// Parse a duration/TimeSpan string like "08:32:00" or "1.08:32:00" to hours and minutes
 String formatTimeSpan(String? timeSpan) {
   if (timeSpan == null || timeSpan.isEmpty) return '--:--';
 
-  // Handle formats: "HH:mm:ss", "D.HH:mm:ss"
   try {
     final parts = timeSpan.split(':');
     if (parts.length >= 2) {
       String hourPart = parts[0];
-      // Handle day offset: "1.08" means day 1, hour 8
       if (hourPart.contains('.')) {
         final dayHour = hourPart.split('.');
         final days = int.parse(dayHour[0]);
@@ -45,15 +45,30 @@ String formatDate(String? dateStr) {
   }
 }
 
+/// Format DateTime as dd.MM.yyyy for display
+String formatDateDisplay(DateTime date) {
+  return '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year}';
+}
+
+/// Format hour and minute as HH:mm for display
+String formatTimeDisplay(int hour, int minute) {
+  return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+}
+
 /// Format date as yyyy-MM-dd for API requests
 String formatDateForApi(DateTime date) {
   return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 }
 
-/// Format duration string
-String formatDuration(String? duration) {
-  if (duration == null || duration.isEmpty) return '';
-  return duration;
+/// Quick date helpers
+DateTime today() {
+  final now = DateTime.now();
+  return DateTime(now.year, now.month, now.day);
+}
+
+DateTime tomorrow() {
+  final t = today();
+  return t.add(const Duration(days: 1));
 }
 
 /// Calculate travel time between two TimeSpan strings
@@ -117,7 +132,7 @@ int? _timeSpanToMinutes(String timeSpan) {
   return null;
 }
 
-/// Format delay in minutes with color indication text
+/// Format delay in minutes with text description (No emoji)
 String formatDelay(int? delayMinutes) {
   if (delayMinutes == null || delayMinutes == 0) return 'Planowo';
   if (delayMinutes > 0) return '+$delayMinutes min';

@@ -8,8 +8,10 @@ class PlkApi {
   // === DICTIONARIES ===
 
   /// Get all stations (pageSize=10000 to get all at once)
-  Future<Map<String, dynamic>> getStations({String? search, int pageSize = 10000}) async {
-    final response = await _client.get('/api/v1/dictionaries/stations', queryParameters: {
+  Future<Map<String, dynamic>> getStations(
+      {String? search, int pageSize = 10000}) async {
+    final response =
+        await _client.get('/api/v1/dictionaries/stations', queryParameters: {
       if (search != null) 'search': search,
       'pageSize': pageSize,
     });
@@ -24,7 +26,8 @@ class PlkApi {
 
   /// Get commercial categories
   Future<Map<String, dynamic>> getCommercialCategories() async {
-    final response = await _client.get('/api/v1/dictionaries/commercial-categories');
+    final response =
+        await _client.get('/api/v1/dictionaries/commercial-categories');
     return response.data as Map<String, dynamic>;
   }
 
@@ -36,7 +39,8 @@ class PlkApi {
 
   /// Get cities
   Future<Map<String, dynamic>> getCities({String? search}) async {
-    final response = await _client.get('/api/v1/dictionaries/cities', queryParameters: {
+    final response =
+        await _client.get('/api/v1/dictionaries/cities', queryParameters: {
       if (search != null) 'search': search,
     });
     return response.data as Map<String, dynamic>;
@@ -75,8 +79,10 @@ class PlkApi {
   }
 
   /// Get route details for a specific train
-  Future<Map<String, dynamic>> getScheduleRoute(int scheduleId, int orderId) async {
-    final response = await _client.get('/api/v1/schedules/route/$scheduleId/$orderId');
+  Future<Map<String, dynamic>> getScheduleRoute(
+      int scheduleId, int orderId) async {
+    final response =
+        await _client.get('/api/v1/schedules/route/$scheduleId/$orderId');
     return response.data as Map<String, dynamic>;
   }
 
@@ -124,7 +130,8 @@ class PlkApi {
 
   /// Get operation statistics
   Future<Map<String, dynamic>> getOperationStatistics({String? date}) async {
-    final response = await _client.get('/api/v1/operations/statistics', queryParameters: {
+    final response =
+        await _client.get('/api/v1/operations/statistics', queryParameters: {
       if (date != null) 'date': date,
     });
     return response.data as Map<String, dynamic>;

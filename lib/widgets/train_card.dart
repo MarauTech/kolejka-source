@@ -12,18 +12,19 @@ class TrainCard extends StatelessWidget {
     required this.onTap,
   });
 
-  Widget _buildDelayBadge(int delay, bool isCancelled) {
+  Widget _buildDelayBadge(BuildContext context, int delay, bool isCancelled) {
     if (isCancelled) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: Colors.red.shade50,
+          color: Colors.red.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.red.shade300),
+          border: Border.all(color: Colors.red.withValues(alpha: 0.4)),
         ),
         child: const Text(
           'Odwołany',
-          style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12),
+          style: TextStyle(
+              color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12),
         ),
       );
     }
@@ -44,19 +45,21 @@ class TrainCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Text(
         text,
-        style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12),
+        style:
+            TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final depTime = app_date.formatTimeSpan(connection.departureTime);
     final arrTime = app_date.formatTimeSpan(connection.arrivalTime);
     final duration = connection.duration;
@@ -73,29 +76,50 @@ class TrainCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Times and duration
+              // Times and delay badge
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    '$depTime → $arrTime',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        depTime,
+                        style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.bold,
-                          color: const Color(0xFF003366),
+                          color: theme.colorScheme.primary,
                         ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        child: Icon(
+                          Icons.arrow_forward,
+                          size: 18,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      Text(
+                        arrTime,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ],
                   ),
-                  _buildDelayBadge(connection.delay, connection.isCancelled),
+                  _buildDelayBadge(
+                      context, connection.delay, connection.isCancelled),
                 ],
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
 
               // Stations
               Row(
                 children: [
                   Expanded(
                     child: Text(
-                      '${connection.fromStationName} → ${connection.toStationName}',
-                      style: const TextStyle(
+                      '${connection.fromStationName} - ${connection.toStationName}',
+                      style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                         fontSize: 15,
                       ),
@@ -114,13 +138,16 @@ class TrainCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       [
-                        if (connection.commercialCategory.isNotEmpty) connection.commercialCategory,
-                        if (connection.trainNumber.isNotEmpty) connection.trainNumber,
-                        if (connection.carrierName.isNotEmpty) connection.carrierName,
-                      ].join(' • '),
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.grey.shade700,
-                          ),
+                        if (connection.commercialCategory.isNotEmpty)
+                          connection.commercialCategory,
+                        if (connection.trainNumber.isNotEmpty)
+                          connection.trainNumber,
+                        if (connection.carrierName.isNotEmpty)
+                          connection.carrierName,
+                      ].join(' | '),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -129,7 +156,7 @@ class TrainCard extends StatelessWidget {
                     Text(
                       duration,
                       style: TextStyle(
-                        color: Colors.grey.shade600,
+                        color: theme.colorScheme.onSurfaceVariant,
                         fontWeight: FontWeight.w500,
                         fontSize: 13,
                       ),
@@ -145,15 +172,20 @@ class TrainCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: connection.isDirect ? Colors.green.shade50 : Colors.amber.shade50,
+                      color: connection.isDirect
+                          ? Colors.green.withValues(alpha: 0.1)
+                          : Colors.amber.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
                       connection.isDirect ? 'Bezpośredni' : '1 przesiadka',
                       style: TextStyle(
-                        color: connection.isDirect ? Colors.green.shade800 : Colors.amber.shade900,
+                        color: connection.isDirect
+                            ? Colors.green.shade800
+                            : Colors.amber.shade900,
                         fontWeight: FontWeight.w600,
                         fontSize: 12,
                       ),
@@ -164,7 +196,9 @@ class TrainCard extends StatelessWidget {
                       connection.trainStatusText,
                       style: TextStyle(
                         fontSize: 12,
-                        color: connection.isCancelled ? Colors.red : Colors.grey.shade700,
+                        color: connection.isCancelled
+                            ? Colors.red
+                            : theme.colorScheme.onSurfaceVariant,
                         fontWeight: FontWeight.w500,
                       ),
                     ),

@@ -15,9 +15,17 @@ class Station {
   }
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-  };
+        'id': id,
+        'name': name,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Station && runtimeType == other.runtimeType && id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
 }
 
 /// Carrier from /api/v1/dictionaries/carriers
@@ -27,7 +35,8 @@ class Carrier {
   final String? validFrom;
   final String? validTo;
 
-  Carrier({required this.code, required this.name, this.validFrom, this.validTo});
+  Carrier(
+      {required this.code, required this.name, this.validFrom, this.validTo});
 
   factory Carrier.fromJson(Map<String, dynamic> json) {
     return Carrier(
@@ -39,11 +48,11 @@ class Carrier {
   }
 
   Map<String, dynamic> toJson() => {
-    'code': code,
-    'name': name,
-    'validFrom': validFrom,
-    'validTo': validTo,
-  };
+        'code': code,
+        'name': name,
+        'validFrom': validFrom,
+        'validTo': validTo,
+      };
 }
 
 /// Commercial category from /api/v1/dictionaries/commercial-categories
@@ -70,11 +79,11 @@ class CommercialCategory {
   }
 
   Map<String, dynamic> toJson() => {
-    'code': code,
-    'name': name,
-    'carrierCode': carrierCode,
-    'speedCategoryCode': speedCategoryCode,
-  };
+        'code': code,
+        'name': name,
+        'carrierCode': carrierCode,
+        'speedCategoryCode': speedCategoryCode,
+      };
 }
 
 /// Stop type from /api/v1/dictionaries/stop-types
@@ -92,9 +101,9 @@ class StopType {
   }
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'description': description,
-  };
+        'id': id,
+        'description': description,
+      };
 }
 
 /// Station on a route from /api/v1/schedules
@@ -147,7 +156,8 @@ class StationOnRoute {
       arrivalTrack: json['arrivalTrack'] as String?,
       arrivalDay: json['arrivalDay'] as int?,
       arrivalTime: json['arrivalTime'] as String?,
-      departureCommercialCategory: json['departureCommercialCategory'] as String?,
+      departureCommercialCategory:
+          json['departureCommercialCategory'] as String?,
       departureTrainNumber: json['departureTrainNumber'] as String?,
       departurePlatform: json['departurePlatform'] as String?,
       departureTrack: json['departureTrack'] as String?,
@@ -203,7 +213,8 @@ class TrainRoute {
       carrierCode: json['carrierCode'] as String?,
       nationalNumber: json['nationalNumber'] as String?,
       internationalArrivalNumber: json['internationalArrivalNumber'] as String?,
-      internationalDepartureNumber: json['internationalDepartureNumber'] as String?,
+      internationalDepartureNumber:
+          json['internationalDepartureNumber'] as String?,
       commercialCategorySymbol: json['commercialCategorySymbol'] as String?,
       operatingDates: (json['operatingDates'] as List<dynamic>?)
               ?.map((e) => e.toString())
@@ -237,6 +248,8 @@ class OperationStation {
   final String? actualDeparture;
   final bool isConfirmed;
   final bool isCancelled;
+  final String? platform;
+  final String? track;
   final Map<String, dynamic> raw;
 
   OperationStation({
@@ -251,6 +264,8 @@ class OperationStation {
     this.actualDeparture,
     required this.isConfirmed,
     required this.isCancelled,
+    this.platform,
+    this.track,
     required this.raw,
   });
 
@@ -267,6 +282,12 @@ class OperationStation {
       actualDeparture: json['actualDeparture'] as String?,
       isConfirmed: json['isConfirmed'] as bool? ?? false,
       isCancelled: json['isCancelled'] as bool? ?? false,
+      platform: json['platform'] as String? ??
+          json['arrivalPlatform'] as String? ??
+          json['departurePlatform'] as String?,
+      track: json['track'] as String? ??
+          json['arrivalTrack'] as String? ??
+          json['departureTrack'] as String?,
       raw: json,
     );
   }
@@ -327,6 +348,147 @@ class TrainOperation {
   }
 
   Map<String, dynamic> toJson() => raw;
+}
+
+/// Enum for Train Position status
+enum TrainStatusType {
+  notStarted,
+  atStation,
+  betweenStations,
+  completed,
+  cancelled,
+  partialCancelled,
+}
+
+/// Real-time train position indicator on the route
+class TrainPositionInfo {
+  final TrainStatusType type;
+  final String description;
+  final int? currentStationId;
+  final String? currentStationName;
+  final int? nextStationId;
+  final String? nextStationName;
+  final int lastVisitedOrderNumber;
+
+  TrainPositionInfo({
+    required this.type,
+    required this.description,
+    this.currentStationId,
+    this.currentStationName,
+    this.nextStationId,
+    this.nextStationName,
+    this.lastVisitedOrderNumber = 0,
+  });
+
+  static TrainPositionInfo compute({
+    required TrainOperation? operation,
+    required List<StationOnRoute> routeStations,
+    required Map<int, String> stationNames,
+  }) {
+    if (operation == null) {
+      return TrainPositionInfo(
+        type: TrainStatusType.notStarted,
+        description: 'Brak danych o bieżącym kursie',
+      );
+    }
+
+    if (operation.trainStatus == 'X') {
+      return TrainPositionInfo(
+        type: TrainStatusType.cancelled,
+        description: 'Pociąg odwołany',
+      );
+    }
+
+    if (operation.trainStatus == 'Q') {
+      return TrainPositionInfo(
+        type: TrainStatusType.partialCancelled,
+        description: 'Pociąg częściowo odwołany',
+      );
+    }
+
+    if (operation.trainStatus == 'S') {
+      final firstStName = routeStations.isNotEmpty
+          ? (stationNames[routeStations.first.stationId] ?? 'Stacja początkowa')
+          : '';
+      return TrainPositionInfo(
+        type: TrainStatusType.notStarted,
+        description: firstStName.isNotEmpty
+            ? 'Nie rozpoczął kursu ze stacji $firstStName'
+            : 'Nie rozpoczął kursu',
+      );
+    }
+
+    if (operation.trainStatus == 'C') {
+      final lastStName = routeStations.isNotEmpty
+          ? (stationNames[routeStations.last.stationId] ?? 'Stacja docelowa')
+          : '';
+      return TrainPositionInfo(
+        type: TrainStatusType.completed,
+        description: lastStName.isNotEmpty
+            ? 'Zakończył bieg na stacji $lastStName'
+            : 'Zakończył bieg',
+        lastVisitedOrderNumber: routeStations.length,
+      );
+    }
+
+    // Train is in progress ('P') - inspect stations
+    OperationStation? lastDeparted;
+    OperationStation? atStation;
+    OperationStation? nextStation;
+
+    for (int i = 0; i < operation.stations.length; i++) {
+      final st = operation.stations[i];
+      final hasActualArr = st.actualArrival != null;
+      final hasActualDep = st.actualDeparture != null;
+
+      if (hasActualArr && !hasActualDep && i < operation.stations.length - 1) {
+        atStation = st;
+        if (i + 1 < operation.stations.length) {
+          nextStation = operation.stations[i + 1];
+        }
+        break;
+      } else if (hasActualDep) {
+        lastDeparted = st;
+        if (i + 1 < operation.stations.length) {
+          nextStation = operation.stations[i + 1];
+        }
+      }
+    }
+
+    if (atStation != null) {
+      final stName = stationNames[atStation.stationId] ?? 'stacji';
+      return TrainPositionInfo(
+        type: TrainStatusType.atStation,
+        description: 'Na stacji: $stName',
+        currentStationId: atStation.stationId,
+        currentStationName: stName,
+        nextStationId: nextStation?.stationId,
+        nextStationName:
+            nextStation != null ? stationNames[nextStation.stationId] : null,
+        lastVisitedOrderNumber: atStation.actualSequenceNumber,
+      );
+    }
+
+    if (lastDeparted != null && nextStation != null) {
+      final depName = stationNames[lastDeparted.stationId] ?? 'stacji';
+      final nextName = stationNames[nextStation.stationId] ?? 'stacji';
+      return TrainPositionInfo(
+        type: TrainStatusType.betweenStations,
+        description: 'Między $depName a $nextName',
+        currentStationId: lastDeparted.stationId,
+        currentStationName: depName,
+        nextStationId: nextStation.stationId,
+        nextStationName: nextName,
+        lastVisitedOrderNumber: lastDeparted.actualSequenceNumber,
+      );
+    }
+
+    return TrainPositionInfo(
+      type: TrainStatusType.betweenStations,
+      description: 'W trasie',
+      lastVisitedOrderNumber: lastDeparted?.actualSequenceNumber ?? 0,
+    );
+  }
 }
 
 /// Operation statistics from /api/v1/operations/statistics
@@ -445,6 +607,10 @@ class StationBoardItem {
   final int scheduleId;
   final int orderId;
   final String operatingDate;
+  final String? platform;
+  final String? track;
+  final String? plannedTime;
+  final String? actualTime;
   final Map<String, dynamic> raw;
 
   StationBoardItem({
@@ -459,6 +625,10 @@ class StationBoardItem {
     required this.scheduleId,
     required this.orderId,
     required this.operatingDate,
+    this.platform,
+    this.track,
+    this.plannedTime,
+    this.actualTime,
     required this.raw,
   });
 }
@@ -494,7 +664,11 @@ class ConnectionResult {
   });
 
   String get departureTime => fromStop.departureTime ?? '';
-  String get arrivalTime => (secondLeg != null ? secondLeg!.toStop.arrivalTime : toStop.arrivalTime) ?? '';
+  String get arrivalTime =>
+      (secondLeg != null
+          ? secondLeg!.toStop.arrivalTime
+          : toStop.arrivalTime) ??
+      '';
 
   String get trainNumber {
     return fromStop.departureTrainNumber ??
@@ -547,13 +721,15 @@ class ConnectionResult {
     return 0;
   }
 
-  int get delay => departureDelay > arrivalDelay ? departureDelay : arrivalDelay;
+  int get delay =>
+      departureDelay > arrivalDelay ? departureDelay : arrivalDelay;
 
   bool get isCancelled {
     if (operation != null) {
       if (operation!.trainStatus == 'X') return true;
       for (final st in operation!.stations) {
-        if (st.stationId == fromStop.stationId || st.stationId == toStop.stationId) {
+        if (st.stationId == fromStop.stationId ||
+            st.stationId == toStop.stationId) {
           if (st.isCancelled) return true;
         }
       }
@@ -599,4 +775,126 @@ class ConnectionResult {
       if (operation != null) 'rawOperation': operation!.raw,
     };
   }
+}
+
+/// Model for Favorite Station
+class FavoriteStation {
+  final int id;
+  final String name;
+  final DateTime savedAt;
+
+  FavoriteStation({
+    required this.id,
+    required this.name,
+    DateTime? savedAt,
+  }) : savedAt = savedAt ?? DateTime.now();
+
+  factory FavoriteStation.fromJson(Map<String, dynamic> json) {
+    return FavoriteStation(
+      id: json['id'] as int? ?? 0,
+      name: json['name'] as String? ?? '',
+      savedAt: json['savedAt'] != null
+          ? DateTime.tryParse(json['savedAt'] as String) ?? DateTime.now()
+          : DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'savedAt': savedAt.toIso8601String(),
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FavoriteStation &&
+          runtimeType == other.runtimeType &&
+          id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
+}
+
+/// Model for Favorite Route
+class FavoriteRoute {
+  final int fromStationId;
+  final String fromStationName;
+  final int toStationId;
+  final String toStationName;
+  final DateTime savedAt;
+
+  FavoriteRoute({
+    required this.fromStationId,
+    required this.fromStationName,
+    required this.toStationId,
+    required this.toStationName,
+    DateTime? savedAt,
+  }) : savedAt = savedAt ?? DateTime.now();
+
+  factory FavoriteRoute.fromJson(Map<String, dynamic> json) {
+    return FavoriteRoute(
+      fromStationId: json['fromStationId'] as int? ?? 0,
+      fromStationName: json['fromStationName'] as String? ?? '',
+      toStationId: json['toStationId'] as int? ?? 0,
+      toStationName: json['toStationName'] as String? ?? '',
+      savedAt: json['savedAt'] != null
+          ? DateTime.tryParse(json['savedAt'] as String) ?? DateTime.now()
+          : DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'fromStationId': fromStationId,
+        'fromStationName': fromStationName,
+        'toStationId': toStationId,
+        'toStationName': toStationName,
+        'savedAt': savedAt.toIso8601String(),
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FavoriteRoute &&
+          runtimeType == other.runtimeType &&
+          fromStationId == other.fromStationId &&
+          toStationId == other.toStationId;
+
+  @override
+  int get hashCode => Object.hash(fromStationId, toStationId);
+}
+
+/// Train search result by train number
+class TrainSearchResult {
+  final int scheduleId;
+  final int orderId;
+  final String nationalNumber;
+  final String? trainName;
+  final String? carrierCode;
+  final String? carrierName;
+  final String? category;
+  final String fromStationName;
+  final String toStationName;
+  final String departureTime;
+  final String arrivalTime;
+  final List<String> operatingDates;
+  final TrainRoute route;
+  final TrainOperation? operation;
+
+  TrainSearchResult({
+    required this.scheduleId,
+    required this.orderId,
+    required this.nationalNumber,
+    this.trainName,
+    this.carrierCode,
+    this.carrierName,
+    this.category,
+    required this.fromStationName,
+    required this.toStationName,
+    required this.departureTime,
+    required this.arrivalTime,
+    required this.operatingDates,
+    required this.route,
+    this.operation,
+  });
 }

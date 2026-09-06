@@ -51,8 +51,11 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     }
   }
 
-  Widget _buildStatCard(String title, int count, int total, Color color, IconData icon) {
-    final percentage = total > 0 ? (count / total * 100).toStringAsFixed(1) : '0.0';
+  Widget _buildStatCard(
+      String title, int count, int total, Color color, IconData icon) {
+    final theme = Theme.of(context);
+    final percentage =
+        total > 0 ? (count / total * 100).toStringAsFixed(1) : '0.0';
 
     return Card(
       elevation: 1,
@@ -68,7 +71,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                 Container(
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.1),
+                    color: color.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(icon, size: 16, color: color),
@@ -77,7 +80,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                 Expanded(
                   child: Text(
                     title,
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 13),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -102,7 +106,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   style: TextStyle(
                     fontWeight: FontWeight.w500,
                     fontSize: 13,
-                    color: Colors.grey.shade600,
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
@@ -117,14 +121,15 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Status sieci kolejowej', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Status sieci kolejowej',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
             icon: _isLoading
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.refresh),
             onPressed: _isLoading ? null : _loadStats,
@@ -137,6 +142,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   }
 
   Widget _buildBody() {
+    final theme = Theme.of(context);
+
     if (_isLoading && _stats == null) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -148,12 +155,13 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, size: 48, color: Colors.red),
+              Icon(Icons.error_outline,
+                  size: 48, color: theme.colorScheme.error),
               const SizedBox(height: 12),
               Text(
                 _errorMessage!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.red),
+                style: TextStyle(color: theme.colorScheme.error),
               ),
               const SizedBox(height: 16),
               FilledButton(
@@ -171,9 +179,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         onRefresh: _loadStats,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          children: const [
-            SizedBox(height: 100),
-            Center(child: Text('Brak danych statystycznych')),
+          children: [
+            const SizedBox(height: 100),
+            Center(
+              child: Text(
+                'Brak danych statystycznych',
+                style: TextStyle(color: theme.colorScheme.outline),
+              ),
+            ),
           ],
         ),
       );
@@ -192,30 +205,37 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
             // Total Trains Summary Card
             Card(
               elevation: 2,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              color: const Color(0xFF003366),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              color: theme.colorScheme.primary,
               child: Padding(
                 padding: const EdgeInsets.all(20.0),
                 child: Column(
                   children: [
-                    const Text(
+                    Text(
                       'Pociągi w dobie dzisiejszej',
-                      style: TextStyle(color: Colors.white70, fontSize: 14),
+                      style: TextStyle(
+                          color: theme.colorScheme.onPrimary
+                              .withValues(alpha: 0.8),
+                          fontSize: 14),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       total.toString(),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 40,
                         fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        color: theme.colorScheme.onPrimary,
                       ),
                     ),
                     if (_stats!.date != null) ...[
                       const SizedBox(height: 6),
                       Text(
                         'Data statystyk: ${app_date.formatDate(_stats!.date)}',
-                        style: const TextStyle(color: Colors.white60, fontSize: 12),
+                        style: TextStyle(
+                            color: theme.colorScheme.onPrimary
+                                .withValues(alpha: 0.7),
+                            fontSize: 12),
                       ),
                     ],
                   ],
@@ -226,10 +246,9 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
 
             Text(
               'Statusy pociągów',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: const Color(0xFF003366),
-                  ),
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 10),
 
@@ -242,10 +261,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               mainAxisSpacing: 10,
               childAspectRatio: 1.35,
               children: [
-                _buildStatCard('W trasie', _stats!.inProgress, total, Colors.blue.shade700, Icons.directions_railway),
-                _buildStatCard('Zakończone', _stats!.completed, total, Colors.green.shade700, Icons.check_circle_outline),
-                _buildStatCard('Nie rozpoczęły', _stats!.notStarted, total, Colors.grey.shade700, Icons.schedule),
-                _buildStatCard('Odwołane', _stats!.cancelled, total, Colors.red.shade700, Icons.cancel_outlined),
+                _buildStatCard('W trasie', _stats!.inProgress, total,
+                    Colors.blue, Icons.directions_railway),
+                _buildStatCard('Zakończone', _stats!.completed, total,
+                    Colors.green, Icons.check_circle_outline),
+                _buildStatCard('Nie rozpoczęły', _stats!.notStarted, total,
+                    Colors.grey, Icons.schedule),
+                _buildStatCard('Odwołane', _stats!.cancelled, total, Colors.red,
+                    Icons.cancel_outlined),
               ],
             ),
             const SizedBox(height: 10),
@@ -254,29 +277,36 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
             if (_stats!.partialCancelled > 0)
               Card(
                 elevation: 1,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   child: Row(
                     children: [
                       Container(
                         padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withValues(alpha: 0.1),
+                          color: Colors.orange.withValues(alpha: 0.12),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.warning_amber_rounded, size: 18, color: Colors.orange),
+                        child: const Icon(Icons.warning_amber_rounded,
+                            size: 18, color: Colors.orange),
                       ),
                       const SizedBox(width: 12),
                       const Expanded(
                         child: Text(
                           'Częściowo odwołane (część trasy)',
-                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 13),
                         ),
                       ),
                       Text(
                         _stats!.partialCancelled.toString(),
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.orange),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                            color: Colors.orange),
                       ),
                     ],
                   ),
@@ -287,20 +317,24 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
 
             // Raw API Data
             Card(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
               child: ExpansionTile(
-                title: const Text('Pełne dane API (JSON)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                title: const Text('Pełne dane API (JSON)',
+                    style:
+                        TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                 children: [
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
+                      color: theme.colorScheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: SelectableText(
                       const JsonEncoder.withIndent('  ').convert(_stats!.raw),
-                      style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                      style: const TextStyle(
+                          fontFamily: 'monospace', fontSize: 11),
                     ),
                   ),
                 ],
@@ -312,7 +346,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               Center(
                 child: Text(
                   'Wygenerowano: ${app_date.formatDateTime(_stats!.generatedAt)} (${app_date.formatDate(_stats!.generatedAt)})',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  style:
+                      TextStyle(color: theme.colorScheme.outline, fontSize: 12),
                 ),
               ),
             ],

@@ -49,7 +49,8 @@ class ApiClient {
     if (hourly != null) hourlyRemaining = int.tryParse(hourly);
     if (daily != null) dailyRemaining = int.tryParse(daily);
     if (kDebugMode && (hourly != null || daily != null)) {
-      debugPrint('[RateLimit] Hourly: $hourlyRemaining, Daily: $dailyRemaining');
+      debugPrint(
+          '[RateLimit] Hourly: $hourlyRemaining, Daily: $dailyRemaining');
     }
   }
 
@@ -78,10 +79,14 @@ class ApiClient {
         }
 
         // Retry for server errors
-        if (retry && statusCode != null && statusCode >= 500 && attempts <= maxRetries) {
+        if (retry &&
+            statusCode != null &&
+            statusCode >= 500 &&
+            attempts <= maxRetries) {
           final delay = Duration(milliseconds: 500 * attempts);
           if (kDebugMode) {
-            debugPrint('[API] Retry $attempts/$maxRetries after ${delay.inMilliseconds}ms');
+            debugPrint(
+                '[API] Retry $attempts/$maxRetries after ${delay.inMilliseconds}ms');
           }
           await Future.delayed(delay);
           continue;

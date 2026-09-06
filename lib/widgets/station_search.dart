@@ -28,7 +28,8 @@ class _StationSearchFieldState extends State<StationSearchField> {
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: widget.selectedStation?.name ?? '');
+    _controller =
+        TextEditingController(text: widget.selectedStation?.name ?? '');
   }
 
   @override
@@ -52,6 +53,8 @@ class _StationSearchFieldState extends State<StationSearchField> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return RawAutocomplete<Station>(
       textEditingController: _controller,
       focusNode: _focusNode,
@@ -62,9 +65,20 @@ class _StationSearchFieldState extends State<StationSearchField> {
         }
 
         final query = textEditingValue.text.toLowerCase().trim();
-        return widget.stations.where(
-          (station) => station.name.toLowerCase().contains(query),
-        ).take(20);
+        final startsWithList = <Station>[];
+        final containsList = <Station>[];
+
+        for (final station in widget.stations) {
+          final sName = station.name.toLowerCase();
+          if (sName.startsWith(query)) {
+            startsWithList.add(station);
+          } else if (sName.contains(query)) {
+            containsList.add(station);
+          }
+          if (startsWithList.length + containsList.length >= 25) break;
+        }
+
+        return [...startsWithList, ...containsList].take(20);
       },
       onSelected: (Station selection) {
         widget.onStationSelected(selection);
@@ -75,9 +89,12 @@ class _StationSearchFieldState extends State<StationSearchField> {
           focusNode: focusNode,
           decoration: InputDecoration(
             labelText: widget.label,
-            prefixIcon: const Icon(Icons.location_on_outlined, color: Color(0xFF003366)),
-            border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            prefixIcon: Icon(Icons.location_on_outlined,
+                color: theme.colorScheme.primary),
+            border: const OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(10))),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             suffixIcon: controller.text.isNotEmpty
                 ? IconButton(
                     icon: const Icon(Icons.clear, size: 20),
@@ -104,6 +121,7 @@ class _StationSearchFieldState extends State<StationSearchField> {
           child: Material(
             elevation: 4.0,
             borderRadius: BorderRadius.circular(10),
+            color: theme.colorScheme.surfaceContainer,
             child: ConstrainedBox(
               constraints: BoxConstraints(
                 maxHeight: 250,
@@ -117,8 +135,12 @@ class _StationSearchFieldState extends State<StationSearchField> {
                   final option = options.elementAt(index);
                   return ListTile(
                     dense: true,
-                    leading: const Icon(Icons.train, size: 18, color: Color(0xFF003366)),
-                    title: Text(option.name),
+                    leading: Icon(Icons.train,
+                        size: 18, color: theme.colorScheme.primary),
+                    title: Text(
+                      option.name,
+                      style: TextStyle(color: theme.colorScheme.onSurface),
+                    ),
                     onTap: () => onSelected(option),
                   );
                 },
