@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../app_state.dart';
-import '../config.dart';
 import '../models/models.dart';
 
 class DataSourceScreen extends StatefulWidget {
@@ -207,13 +206,8 @@ class _DataSourceScreenState extends State<DataSourceScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  const Text(
-                    'Węzeł proxy: $apiBaseUrl',
-                    style: TextStyle(fontSize: 12, fontFamily: 'monospace'),
-                  ),
-                  const SizedBox(height: 8),
                   Text(
-                    'Klucz autoryzacyjny PLK_API_KEY jest przechowywany w szyfrowanym magazynie sekretów Cloudflare Worker. Żaden klucz nie jest zapisany wewnątrz pliku APK, co zapewnia pełne bezpieczeństwo uwierzytelnienia.',
+                    'Połączenie z API PKP PLK odbywa się przez zabezpieczoną usługę pośredniczącą. Klucz autoryzacyjny do API jest bezpiecznie przechowywany po stronie serwera proxy i nie jest zapisany wewnątrz pliku aplikacji mobilnej, co zapewnia pełne bezpieczeństwo uwierzytelnienia.',
                     style: TextStyle(
                         fontSize: 13,
                         height: 1.4,
