@@ -404,8 +404,40 @@ class AppState extends ChangeNotifier {
 
       final now = DateTime.now();
 
+      // Collect unique schedule+order pairs for batch schedule lookup
+      final scheduleKeys = <String, _ScheduleKey>{};
       for (final t in rawTrains) {
         final op = TrainOperation.fromJson(t as Map<String, dynamic>);
+        final key = '${op.scheduleId}_${op.orderId}';
+        scheduleKeys[key] = _ScheduleKey(op.scheduleId, op.orderId);
+      }
+
+      // Fetch schedule details in parallel to get real train numbers
+      final scheduleData = <String, Map<String, dynamic>>{};
+      final futures = scheduleKeys.entries.map((entry) async {
+        try {
+          final data = await api.getScheduleRoute(
+              entry.value.scheduleId, entry.value.orderId);
+          scheduleData[entry.key] = data;
+        } catch (e) {
+          debugPrint('[AppState] Failed to fetch schedule ${entry.key}: $e');
+        }
+      });
+      await Future.wait(futures);
+
+      for (final t in rawTrains) {
+        final op = TrainOperation.fromJson(t as Map<String, dynamic>);
+        final schedKey = '${op.scheduleId}_${op.orderId}';
+        final sched = scheduleData[schedKey];
+
+        // Extract real train number and category from schedule data
+        final natNum = sched?['nationalNumber'] as String? ?? '';
+        final catSymbol = sched?['commercialCategorySymbol'] as String? ?? '';
+        final carrierCode = sched?['carrierCode'] as String? ?? '';
+        final carrierName = carrierCode.isNotEmpty
+            ? (carrierNames[carrierCode] ?? carrierCode)
+            : '';
+
         for (int i = 0; i < op.stations.length; i++) {
           final st = op.stations[i];
           if (st.stationId == stationId) {
@@ -420,6 +452,10 @@ class AppState extends ChangeNotifier {
               origin = getStationName(op.stations.first.stationId);
             }
 
+            // Display train number: prefer nationalNumber, fallback message
+            final displayNumber = natNum.isNotEmpty ? natNum : '';
+            final displayCategory = catSymbol;
+
             // Filter out trains departed > 15 minutes ago
             if (depTime != null && i < op.stations.length - 1) {
               final depDt = DateTime.tryParse(depTime)?.toLocal();
@@ -429,9 +465,9 @@ class AppState extends ChangeNotifier {
               if (!isOld) {
                 departures.add(StationBoardItem(
                   time: app_date.formatDateTime(depTime),
-                  trainNumber: op.trainOrderId.toString(),
-                  trainCategory: '',
-                  carrier: '',
+                  trainNumber: displayNumber,
+                  trainCategory: displayCategory,
+                  carrier: carrierName,
                   direction: destination,
                   delayMinutes: st.departureDelayMinutes,
                   isCancelled: st.isCancelled || op.trainStatus == 'X',
@@ -459,9 +495,9 @@ class AppState extends ChangeNotifier {
               if (!isOld) {
                 arrivals.add(StationBoardItem(
                   time: app_date.formatDateTime(arrTime),
-                  trainNumber: op.trainOrderId.toString(),
-                  trainCategory: '',
-                  carrier: '',
+                  trainNumber: displayNumber,
+                  trainCategory: displayCategory,
+                  carrier: carrierName,
                   direction: origin,
                   delayMinutes: st.arrivalDelayMinutes,
                   isCancelled: st.isCancelled || op.trainStatus == 'X',
@@ -886,4 +922,11 @@ class AppState extends ChangeNotifier {
       return null;
     }
   }
+}
+
+/// Helper class for schedule lookup keys
+class _ScheduleKey {
+  final int scheduleId;
+  final int orderId;
+  _ScheduleKey(this.scheduleId, this.orderId);
 }

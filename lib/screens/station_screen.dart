@@ -159,29 +159,30 @@ class _StationScreenState extends State<StationScreen>
                                   color: theme.colorScheme.primary,
                                 ),
                                 const SizedBox(width: 4),
-                                Text(
-                                  'Najbliższa stacja (GPS)',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: theme.colorScheme.primary,
-                                    fontWeight: FontWeight.w600,
+                                Flexible(
+                                  child: Text(
+                                    'Najbliższa stacja (GPS)'
+                                    '${appState.stationBoardLastUpdated != null ? ' | Zaktualizowano: ${appState.stationBoardLastUpdated!.hour.toString().padLeft(2, '0')}:${appState.stationBoardLastUpdated!.minute.toString().padLeft(2, '0')}:${appState.stationBoardLastUpdated!.second.toString().padLeft(2, '0')}' : ''}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: theme.colorScheme.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                               ] else ...[
-                                Text(
-                                  'Wybrana stacja',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                              if (appState.stationBoardLastUpdated != null) ...[
-                                Text(
-                                  ' | Zaktualizowano: ${appState.stationBoardLastUpdated!.hour.toString().padLeft(2, '0')}:${appState.stationBoardLastUpdated!.minute.toString().padLeft(2, '0')}:${appState.stationBoardLastUpdated!.second.toString().padLeft(2, '0')}',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: theme.colorScheme.outline,
+                                Flexible(
+                                  child: Text(
+                                    'Wybrana stacja'
+                                    '${appState.stationBoardLastUpdated != null ? ' | Zaktualizowano: ${appState.stationBoardLastUpdated!.hour.toString().padLeft(2, '0')}:${appState.stationBoardLastUpdated!.minute.toString().padLeft(2, '0')}:${appState.stationBoardLastUpdated!.second.toString().padLeft(2, '0')}' : ''}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                               ],
@@ -318,7 +319,10 @@ class _StationScreenState extends State<StationScreen>
     return RefreshIndicator(
       onRefresh: () => appState.loadStationBoard(appState.currentStation!.id),
       child: ListView.separated(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: EdgeInsets.only(
+          top: 8,
+          bottom: MediaQuery.of(context).padding.bottom + 8,
+        ),
         itemCount: items.length,
         separatorBuilder: (_, __) => Divider(
           height: 1,
@@ -371,13 +375,25 @@ class _StationScreenState extends State<StationScreen>
               children: [
                 const SizedBox(height: 2),
                 Text(
-                  [
-                    if (item.trainCategory.isNotEmpty) item.trainCategory,
-                    item.trainNumber,
-                    if (item.carrier.isNotEmpty) item.carrier,
-                  ].join(' | '),
+                  () {
+                    final parts = <String>[];
+                    // Combine category and number: "IC 5410"
+                    final trainLabel = [
+                      if (item.trainCategory.isNotEmpty) item.trainCategory,
+                      if (item.trainNumber.isNotEmpty) item.trainNumber,
+                    ].join(' ').trim();
+                    if (trainLabel.isNotEmpty) {
+                      parts.add(trainLabel);
+                    }
+                    if (item.carrier.isNotEmpty) parts.add(item.carrier);
+                    return parts.isNotEmpty
+                        ? parts.join(' | ')
+                        : 'Numer niedostępny';
+                  }(),
                   style: TextStyle(
                       fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 if (item.platform != null && item.platform!.isNotEmpty) ...[
                   const SizedBox(height: 2),
