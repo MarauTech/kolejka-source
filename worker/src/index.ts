@@ -48,12 +48,15 @@ export default {
     }
 
     const targetUrl = new URL(path + url.search, UPSTREAM_URL);
+    const rawKey = (env.PLK_API_KEY || '').trim();
+    // Remove potential whitespace/line breaks from copied keys
+    const apiKey = rawKey.replace(/\s+/g, '');
     
     try {
       const apiResponse = await fetch(targetUrl.toString(), {
         method: request.method,
         headers: {
-          'X-API-Key': env.PLK_API_KEY,
+          'X-API-Key': apiKey,
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
