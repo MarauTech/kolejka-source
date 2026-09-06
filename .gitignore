@@ -68,3 +68,4 @@ website/out/
 website/dist/
 website/.vite/
 website/.git/
+website/.openai/

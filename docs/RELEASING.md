@@ -1,4 +1,4 @@
-﻿# Wydawanie Kolejki
+# Wydawanie Kolejki
 
 1. Ustaw nową wersję i rosnący numer kompilacji w pubspec.yaml.
 2. Uzupełnij CHANGELOG.md.
@@ -7,7 +7,7 @@
 5. Zbuduj `flutter build apk --release`. Brak konfiguracji podpisu celowo blokuje wydanie zamiast używać klucza debug.
 6. Sprawdź podpis narzędziem Android apksigner. Skopiuj APK do kolejka-WERSJA.apk i policz SHA-256.
 7. Utwórz tag vWERSJA i GitHub Release oznaczony jako prerelease. Dodaj APK oraz SHA256SUMS.txt.
-8. Zaktualizuj numer i odnośnik na stronie pobierania, zbuduj ją i opublikuj przez Sites.
+8. Zaktualizuj numer i odnośnik na stronie pobierania, zbuduj ją i opublikuj przez GitHub Pages.
 
 Prywatny klucz pierwszego wydania jest przechowywany lokalnie, poza Git, w .private/kolejka-release.jks. Hasła są w ignorowanym android/key.properties. Właściciel powinien wykonać bezpieczną kopię obu plików. Utrata klucza uniemożliwi podpisywanie zgodnych aktualizacji. Nie umieszczaj klucza ani haseł w repozytorium i zgłoszeniach.
 

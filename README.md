@@ -1,8 +1,8 @@
-﻿<div align="center">
+<div align="center">
   <img src="assets/branding/kolejka_icon.png" width="104" alt="Logo Kolejka">
   <h1>Kolejka <sup>BETA</sup></h1>
   <p>Połączenia, tablice stacyjne i opóźnienia. Kolej pod ręką.</p>
-  <p><a href="https://kolejka-beta.ardent-reed-7891.chatgpt.site">Strona aplikacji</a> · <a href="https://github.com/MarauTech/kolejka/releases/tag/v1.0.0-beta.1">Pobierz APK</a> · <a href="https://github.com/MarauTech/kolejka/issues/new/choose">Zgłoś błąd</a></p>
+  <p><a href="https://marautech.github.io/kolejka/">Strona aplikacji</a> · <a href="https://github.com/MarauTech/kolejka/releases/tag/v1.0.0-beta.1">Pobierz APK</a> · <a href="https://github.com/MarauTech/kolejka/issues/new/choose">Zgłoś błąd</a></p>
   <img src="https://img.shields.io/badge/status-BETA-e5bd5a" alt="Status BETA">
   <img src="https://img.shields.io/badge/platforma-Android-16436d" alt="Android">
 </div>
@@ -73,7 +73,7 @@ Podpisane wydania: [instrukcja wydawania](docs/RELEASING.md). Zgłoszenia i wkł
 | `android/` | Konfiguracja Androida |
 | `assets/branding/` | Logo i ikony Kolejki |
 | `worker/` | Proxy API PLK |
-| `website/` | Strona pobierania zbudowana w Sites |
+| `website/` | Strona pobierania publikowana przez GitHub Pages |
 | `docs/` | Prywatność i proces wydań |
 
 Nie nadano projektowi licencji open-source. Licencje zależności pozostają własnością ich autorów.
