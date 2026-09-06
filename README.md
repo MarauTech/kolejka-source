@@ -1,6 +1,6 @@
-# Trainly - Rozkład jazdy kolei w Polsce
+# Kolejka - Rozkład jazdy kolei w Polsce
 
-Trainly to aplikacja mobilna stworzona w technologii Flutter, która umożliwia sprawdzanie rozkładów jazdy pociągów, statystyk opóźnień oraz informacji o zakłóceniach korzystając z oficjalnego API PKP PLK.
+Kolejka to aplikacja mobilna stworzona w technologii Flutter, która umożliwia sprawdzanie rozkładów jazdy pociągów, tablic stacyjnych, opóźnień oraz informacji o utrudnieniach korzystając z oficjalnego API PKP PLK.
 
 ## Wymagania wstępne
 - Flutter SDK w wersji 3.x

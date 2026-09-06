@@ -16,13 +16,13 @@ void main() async {
   runApp(
     ChangeNotifierProvider.value(
       value: appState,
-      child: const TrainlyApp(),
+      child: const KolejkaApp(),
     ),
   );
 }
 
-class TrainlyApp extends StatelessWidget {
-  const TrainlyApp({super.key});
+class KolejkaApp extends StatelessWidget {
+  const KolejkaApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +31,7 @@ class TrainlyApp extends StatelessWidget {
     const seedColor = Color(0xFF003366);
 
     return MaterialApp(
-      title: 'Trainly',
+      title: 'Kolejka',
       debugShowCheckedModeBanner: false,
       themeMode: appState.themeMode,
       theme: ThemeData(

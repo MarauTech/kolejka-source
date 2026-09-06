@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import '../app_state.dart';
 import 'permissions_screen.dart';
 import 'data_source_screen.dart';
-import 'about_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -101,11 +100,11 @@ class SettingsScreen extends StatelessWidget {
           ),
 
           const SizedBox(height: 12),
-          // Section: Prywatność i uprawnienia
+          // Section: Uprawnienia
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text(
-              'PRYWATNOŚĆ I SYSTEM',
+              'UPRAWNIENIA',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
@@ -131,11 +130,11 @@ class SettingsScreen extends StatelessWidget {
           ),
 
           const SizedBox(height: 12),
-          // Section: Diagnostyka i sieci
+          // Section: Dane i sieć
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text(
-              'DIAGNOSTYKA I SIECI',
+              'DANE I SIEĆ',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
@@ -146,43 +145,15 @@ class SettingsScreen extends StatelessWidget {
           ),
           ListTile(
             leading: Icon(Icons.dns_outlined, color: theme.colorScheme.primary),
-            title: const Text('Status API i diagnostyka'),
+            title: const Text('Usługa i źródło danych'),
             subtitle: const Text(
-                'Wersje danych rozkładu, wykonania i limity zapytań'),
+                'Status API PKP PLK, wersje rozkładu i limity zapytań'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
                     builder: (context) => const DataSourceScreen()),
-              );
-            },
-          ),
-
-          const SizedBox(height: 12),
-          // Section: Informacje
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text(
-              'INFORMACJE',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: theme.colorScheme.primary,
-                letterSpacing: 0.8,
-              ),
-            ),
-          ),
-          ListTile(
-            leading: Icon(Icons.info_outline, color: theme.colorScheme.primary),
-            title: const Text('O aplikacji'),
-            subtitle: const Text(
-                'Twórcy (Adam W. & MarauTech), wersja i nota prawna'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AboutScreen()),
               );
             },
           ),

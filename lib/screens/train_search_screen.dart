@@ -231,14 +231,15 @@ class _TrainSearchScreenState extends State<TrainSearchScreen>
                           size: 48, color: theme.colorScheme.outline),
                       const SizedBox(height: 12),
                       Text(
-                        'Nie znaleziono pociągu o podanym numerze',
+                        'Nie znaleziono pociągu dla wybranej daty.',
                         style: TextStyle(
                             fontSize: 15,
+                            fontWeight: FontWeight.w500,
                             color: theme.colorScheme.onSurfaceVariant),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Upewnij się, że data kursowania jest poprawna.',
+                        'Sprawdź numer lub nazwę pociągu oraz datę kursowania.',
                         style: TextStyle(
                             fontSize: 13, color: theme.colorScheme.outline),
                       ),
@@ -283,8 +284,7 @@ class _TrainSearchScreenState extends State<TrainSearchScreen>
                                   toStationName: item.toStationName,
                                   carrierName: item.carrierName ?? '',
                                   commercialCategory: item.category ?? '',
-                                  operatingDate:
-                                      app_date.formatDateForApi(_selectedDate),
+                                  operatingDate: item.operatingDate,
                                 ),
                               ),
                             ),

@@ -35,6 +35,13 @@ void main() {
       expect(AppState.normalizeTrainNumber('EIP 1300'), '1300');
       expect(AppState.normalizeTrainNumber('Kormoran'), 'KORMORAN');
     });
+
+    test('NormalizeText handles polish characters and whitespace', () {
+      expect(AppState.normalizeText('  Kormoran  '), 'kormoran');
+      expect(AppState.normalizeText('ŁÓDŹ FABRYCZNA'), 'lodz fabryczna');
+      expect(
+          AppState.normalizeText('Pociąg   Pośpieszny'), 'pociag pospieszny');
+    });
   });
 
   group('Location and OSM Matching Tests', () {

@@ -73,7 +73,7 @@ class _DataSourceScreenState extends State<DataSourceScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Diagnostyka i status API',
+        title: const Text('Usługa i źródło danych',
             style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(

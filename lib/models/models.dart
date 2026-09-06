@@ -878,6 +878,7 @@ class TrainSearchResult {
   final String departureTime;
   final String arrivalTime;
   final List<String> operatingDates;
+  final String operatingDate;
   final TrainRoute route;
   final TrainOperation? operation;
 
@@ -894,6 +895,7 @@ class TrainSearchResult {
     required this.departureTime,
     required this.arrivalTime,
     required this.operatingDates,
+    required this.operatingDate,
     required this.route,
     this.operation,
   });

@@ -36,7 +36,7 @@ class LocationService {
               connectTimeout: const Duration(seconds: 6),
               receiveTimeout: const Duration(seconds: 8),
               headers: {
-                'User-Agent': 'TrainlyApp/1.0 (PKP PLK Train Schedule)',
+                'User-Agent': 'KolejkaApp/1.0 (PKP PLK Train Schedule)',
                 'Accept': 'application/json',
               },
             ));

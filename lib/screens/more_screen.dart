@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'disruptions_screen.dart';
 import 'statistics_screen.dart';
 import 'settings_screen.dart';
-import 'about_screen.dart';
 
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
@@ -70,23 +69,6 @@ class MoreScreen extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const SettingsScreen()),
-              );
-            },
-          ),
-          Divider(
-              indent: 16,
-              endIndent: 16,
-              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4)),
-          ListTile(
-            leading: Icon(Icons.info_outline, color: theme.colorScheme.primary),
-            title: const Text('O aplikacji',
-                style: TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: const Text('Wersja, autorzy i informacje prawne'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AboutScreen()),
               );
             },
           ),

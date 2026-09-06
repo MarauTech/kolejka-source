@@ -500,22 +500,37 @@ class AppState extends ChangeNotifier {
 
   /// Normalize query for train number (extract pure number, e.g. 'IC 5410' -> '5410')
   static String normalizeTrainNumber(String query) {
-    var cleaned = query.trim().toUpperCase();
+    final cleaned = query.trim();
     final match = RegExp(r'\d+').firstMatch(cleaned);
     if (match != null) {
       return match.group(0)!;
     }
-    return cleaned;
+    return cleaned.toUpperCase();
   }
 
-  /// Search train by number
+  /// Normalizes train name for search (lowercase, polish diacritics stripped, whitespace collapsed)
+  static String normalizeText(String input) {
+    var s = input.trim().toLowerCase();
+    s = s.replaceAll(RegExp(r'\s+'), ' ');
+    const polish = 'ąćęłńóśźż';
+    const latin = 'acelnoszz';
+    for (int i = 0; i < polish.length; i++) {
+      s = s.replaceAll(polish[i], latin[i]);
+    }
+    return s;
+  }
+
+  /// Search train by number or name strictly against real API records for a specific date
   Future<List<TrainSearchResult>> searchTrainByNumber(String query,
       {DateTime? date}) async {
     final searchDate = date ?? DateTime.now();
     final dateStr = app_date.formatDateForApi(searchDate);
-    final targetNumber = normalizeTrainNumber(query);
+    final rawQuery = query.trim();
+    if (rawQuery.isEmpty) return [];
 
-    if (targetNumber.isEmpty) return [];
+    final normalizedQuery = normalizeText(rawQuery);
+    final queryDigits = RegExp(r'^\d+$').firstMatch(rawQuery)?.group(0) ??
+        RegExp(r'\d+').firstMatch(rawQuery)?.group(0);
 
     // Check cached routes index for this date
     List<dynamic>? rawRoutes = cache.loadTrainIndex(dateStr);
@@ -536,50 +551,99 @@ class AppState extends ChangeNotifier {
     }
 
     final List<TrainSearchResult> results = [];
+    final Set<String> seenKeys =
+        {}; // Deduplication key: scheduleId_orderId_operatingDate
+
     if (rawRoutes != null) {
       for (final r in rawRoutes) {
-        final route = TrainRoute.fromJson(r as Map<String, dynamic>);
-        final natNum = route.nationalNumber?.trim() ?? '';
-        final name = route.name?.trim() ?? '';
+        if (r is! Map<String, dynamic>) continue;
+        final route = TrainRoute.fromJson(r);
+
+        // 1. Mandatory operating date verification: train MUST operate on dateStr
+        if (!route.operatingDates.contains(dateStr)) {
+          debugPrint(
+              '[AppState] Skipped invalid train result: ${route.scheduleId}/${route.orderId} does not operate on $dateStr');
+          continue;
+        }
+
+        // 2. Must have valid stations route
+        if (route.stations.isEmpty) {
+          debugPrint(
+              '[AppState] Skipped invalid train result: ${route.scheduleId}/${route.orderId} has empty stations');
+          continue;
+        }
+
+        final natNum = route.nationalNumber?.trim();
+        final rawName = route.name?.trim();
 
         bool isMatch = false;
-        if (natNum.contains(targetNumber) || targetNumber.contains(natNum)) {
-          isMatch = true;
-        } else if (name.toUpperCase().contains(targetNumber.toUpperCase())) {
-          isMatch = true;
-        } else {
-          // Check train numbers on route stops
-          for (final st in route.stations) {
-            if (st.departureTrainNumber?.contains(targetNumber) == true ||
-                st.arrivalTrainNumber?.contains(targetNumber) == true) {
-              isMatch = true;
-              break;
+
+        // A. Exact train number search if user entered digits (e.g. "5410" or "IC 5410")
+        if (queryDigits != null && queryDigits.isNotEmpty) {
+          // Check nationalNumber (primary)
+          if (natNum != null && natNum.isNotEmpty && natNum == queryDigits) {
+            isMatch = true;
+          } else {
+            // Check arrival/departure train number on stops
+            for (final st in route.stations) {
+              if (st.departureTrainNumber?.trim() == queryDigits ||
+                  st.arrivalTrainNumber?.trim() == queryDigits) {
+                isMatch = true;
+                break;
+              }
             }
           }
         }
 
-        if (isMatch) {
-          String fromName = 'Początkowa';
-          String toName = 'Docelowa';
-          String depTime = '--:--';
-          String arrTime = '--:--';
-
-          if (route.stations.isNotEmpty) {
-            fromName = getStationName(route.stations.first.stationId);
-            toName = getStationName(route.stations.last.stationId);
-            depTime = route.stations.first.departureTime != null
-                ? app_date.formatTimeSpan(route.stations.first.departureTime)
-                : '--:--';
-            arrTime = route.stations.last.arrivalTime != null
-                ? app_date.formatTimeSpan(route.stations.last.arrivalTime)
-                : '--:--';
+        // B. Train name search strictly in route.name if name exists
+        if (!isMatch &&
+            rawName != null &&
+            rawName.isNotEmpty &&
+            normalizedQuery.length >= 2) {
+          final normName = normalizeText(rawName);
+          if (normName == normalizedQuery ||
+              normName.contains(normalizedQuery)) {
+            isMatch = true;
           }
+        }
 
-          results.add(TrainSearchResult(
+        if (isMatch) {
+          // Deduplication key: scheduleId_orderId_operatingDate
+          final dedupeKey = '${route.scheduleId}_${route.orderId}_$dateStr';
+          if (seenKeys.contains(dedupeKey)) continue;
+          seenKeys.add(dedupeKey);
+
+          // Route origin and destination from full real route
+          final firstStop = route.stations.first;
+          final lastStop = route.stations.last;
+
+          final fromName = getStationName(firstStop.stationId);
+          final toName = getStationName(lastStop.stationId);
+
+          // Real departure and arrival times from specific run
+          final depTime = firstStop.departureTime != null
+              ? app_date.formatTimeSpan(firstStop.departureTime)
+              : (firstStop.arrivalTime != null
+                  ? app_date.formatTimeSpan(firstStop.arrivalTime)
+                  : '--:--');
+          final arrTime = lastStop.arrivalTime != null
+              ? app_date.formatTimeSpan(lastStop.arrivalTime)
+              : (lastStop.departureTime != null
+                  ? app_date.formatTimeSpan(lastStop.departureTime)
+                  : '--:--');
+
+          // Effective displayed number: strictly from API, NEVER the user query!
+          final displayNumber = (natNum != null && natNum.isNotEmpty)
+              ? natNum
+              : (firstStop.departureTrainNumber?.trim() ??
+                  firstStop.arrivalTrainNumber?.trim() ??
+                  '');
+
+          final result = TrainSearchResult(
             scheduleId: route.scheduleId,
             orderId: route.orderId,
-            nationalNumber: natNum.isNotEmpty ? natNum : targetNumber,
-            trainName: route.name,
+            nationalNumber: displayNumber,
+            trainName: rawName,
             carrierCode: route.carrierCode,
             carrierName: getCarrierName(route.carrierCode),
             category: getCategoryName(route.commercialCategorySymbol),
@@ -588,12 +652,21 @@ class AppState extends ChangeNotifier {
             departureTime: depTime,
             arrivalTime: arrTime,
             operatingDates: route.operatingDates,
+            operatingDate: dateStr,
             route: route,
-          ));
+          );
+
+          // Debug log source of result as required
+          debugPrint(
+              '[TrainSearch] Result: scheduleId=${result.scheduleId}, orderId=${result.orderId}, nationalNumber=${result.nationalNumber}, name=${result.trainName}, operatingDate=${result.operatingDate}, firstStation=${result.fromStationName}, lastStation=${result.toStationName}');
+
+          results.add(result);
         }
       }
     }
 
+    // Sort by departure time
+    results.sort((a, b) => a.departureTime.compareTo(b.departureTime));
     return results;
   }
 

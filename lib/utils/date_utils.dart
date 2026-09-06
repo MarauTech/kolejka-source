@@ -1,4 +1,4 @@
-// Polish date and time utilities for Trainly
+// Polish date and time utilities for Kolejka
 
 /// Parse a duration/TimeSpan string like "08:32:00" or "1.08:32:00" to hours and minutes
 String formatTimeSpan(String? timeSpan) {
