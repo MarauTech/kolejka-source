@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'api/api_client.dart';
 import 'api/plk_api.dart';
@@ -385,6 +387,12 @@ class AppState extends ChangeNotifier {
     loadStationBoard(station.id);
   }
 
+  // Memory cache for station board data to avoid rapid re-fetches
+  final Map<int, Map<String, dynamic>> _stationBoardOpsCache = {};
+  final Map<int, DateTime> _stationBoardOpsCacheTime = {};
+  final Map<int, Map<String, dynamic>> _stationBoardSchedCache = {};
+  final Map<int, DateTime> _stationBoardSchedCacheTime = {};
+
   /// Load departures and arrivals for station board
   Future<void> loadStationBoard(int stationId) async {
     isStationBoardLoading = true;
@@ -392,46 +400,101 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await api.getOperations(
-        stations: stationId.toString(),
-        withPlanned: true,
-        fullRoutes: true,
-      );
-
-      final rawTrains = response['trains'] as List<dynamic>? ?? [];
-      final List<StationBoardItem> departures = [];
-      final List<StationBoardItem> arrivals = [];
-
       final now = DateTime.now();
 
-      // Collect unique schedule+order pairs for batch schedule lookup
-      final scheduleKeys = <String, _ScheduleKey>{};
-      for (final t in rawTrains) {
-        final op = TrainOperation.fromJson(t as Map<String, dynamic>);
-        final key = '${op.scheduleId}_${op.orderId}';
-        scheduleKeys[key] = _ScheduleKey(op.scheduleId, op.orderId);
+      // Check memory cache
+      Map<String, dynamic>? opsResponse;
+      Map<String, dynamic>? schedResponse;
+
+      final opsTime = _stationBoardOpsCacheTime[stationId];
+      if (opsTime != null && now.difference(opsTime).inSeconds < 30) {
+        opsResponse = _stationBoardOpsCache[stationId];
+        if (kDebugMode) debugPrint('[PDP] cache HIT operations for station $stationId');
       }
 
-      // Fetch schedule details in parallel to get real train numbers
-      final scheduleData = <String, Map<String, dynamic>>{};
-      final futures = scheduleKeys.entries.map((entry) async {
-        try {
-          final data = await api.getScheduleRoute(
-              entry.value.scheduleId, entry.value.orderId);
-          scheduleData[entry.key] = data;
-        } catch (e) {
-          debugPrint('[AppState] Failed to fetch schedule ${entry.key}: $e');
-        }
-      });
-      await Future.wait(futures);
+      final schedTime = _stationBoardSchedCacheTime[stationId];
+      if (schedTime != null && now.difference(schedTime).inMinutes < 15) {
+        schedResponse = _stationBoardSchedCache[stationId];
+        if (kDebugMode) debugPrint('[PDP] cache HIT schedules for station $stationId');
+      }
+
+      // Fetch what is missing in parallel
+      final futures = <Future>[];
+      
+      late Future<Map<String, dynamic>> opsFuture;
+      if (opsResponse == null) {
+        opsFuture = api.getOperations(
+          stations: stationId.toString(),
+          withPlanned: true,
+          fullRoutes: true, // Needed for destination/origin logic
+        );
+        futures.add(opsFuture.then((res) {
+          opsResponse = res;
+          _stationBoardOpsCache[stationId] = res;
+          _stationBoardOpsCacheTime[stationId] = DateTime.now();
+          if (kDebugMode) debugPrint('[PDP] cache MISS operations for station $stationId');
+        }));
+      }
+
+      late Future<Map<String, dynamic>> schedFuture;
+      if (schedResponse == null) {
+        schedFuture = api.getSchedules(
+          stations: stationId.toString(),
+          fullRoute: true,
+        );
+        futures.add(schedFuture.then((res) {
+          schedResponse = res;
+          _stationBoardSchedCache[stationId] = res;
+          _stationBoardSchedCacheTime[stationId] = DateTime.now();
+          if (kDebugMode) debugPrint('[PDP] cache MISS schedules for station $stationId');
+        }));
+      }
+
+      if (futures.isNotEmpty) {
+        await Future.wait(futures);
+      }
+
+      final rawTrains = opsResponse!['trains'] as List<dynamic>? ?? [];
+      final rawSchedules = schedResponse!['routes'] as List<dynamic>? ?? [];
+
+      // Build a map of scheduleId_orderId -> RouteDto for quick lookup
+      final Map<String, Map<String, dynamic>> scheduleData = {};
+      for (final r in rawSchedules) {
+        final route = r as Map<String, dynamic>;
+        final schedId = route['scheduleId'];
+        final ordId = route['orderId'];
+        scheduleData['${schedId}_${ordId}'] = route;
+      }
+
+      final List<StationBoardItem> departures = [];
+      final List<StationBoardItem> arrivals = [];
 
       for (final t in rawTrains) {
         final op = TrainOperation.fromJson(t as Map<String, dynamic>);
         final schedKey = '${op.scheduleId}_${op.orderId}';
         final sched = scheduleData[schedKey];
 
-        // Extract real train number and category from schedule data
-        final natNum = sched?['nationalNumber'] as String? ?? '';
+        // 1. Try to find departure/arrival train number in the stations list from schedule
+        String? depTrainNum;
+        String? arrTrainNum;
+        
+        if (sched != null && sched['stations'] != null) {
+          final stations = sched['stations'] as List<dynamic>;
+          for (final st in stations) {
+            final stationMap = st as Map<String, dynamic>;
+            if (stationMap['stationId'] == stationId) {
+              depTrainNum = stationMap['departureTrainNumber'] as String?;
+              arrTrainNum = stationMap['arrivalTrainNumber'] as String?;
+              break;
+            }
+          }
+        }
+
+        // Fallbacks for train number
+        final natNum = sched?['nationalNumber'] as String?;
+        final intDepNum = sched?['internationalDepartureNumber'] as String?;
+        final intArrNum = sched?['internationalArrivalNumber'] as String?;
+        
         final catSymbol = sched?['commercialCategorySymbol'] as String? ?? '';
         final carrierCode = sched?['carrierCode'] as String? ?? '';
         final carrierName = carrierCode.isNotEmpty
@@ -452,21 +515,20 @@ class AppState extends ChangeNotifier {
               origin = getStationName(op.stations.first.stationId);
             }
 
-            // Display train number: prefer nationalNumber, fallback message
-            final displayNumber = natNum.isNotEmpty ? natNum : '';
-            final displayCategory = catSymbol;
+            // Display train number logic
+            final departureDisplayNumber = depTrainNum ?? natNum ?? intDepNum ?? intArrNum ?? '';
+            final arrivalDisplayNumber = arrTrainNum ?? natNum ?? intArrNum ?? intDepNum ?? '';
 
             // Filter out trains departed > 15 minutes ago
             if (depTime != null && i < op.stations.length - 1) {
               final depDt = DateTime.tryParse(depTime)?.toLocal();
-              final isOld =
-                  depDt != null && now.difference(depDt).inMinutes > 15;
+              final isOld = depDt != null && now.difference(depDt).inMinutes > 15;
 
               if (!isOld) {
                 departures.add(StationBoardItem(
                   time: app_date.formatDateTime(depTime),
-                  trainNumber: displayNumber,
-                  trainCategory: displayCategory,
+                  trainNumber: departureDisplayNumber,
+                  trainCategory: catSymbol,
                   carrier: carrierName,
                   direction: destination,
                   delayMinutes: st.departureDelayMinutes,
@@ -489,14 +551,13 @@ class AppState extends ChangeNotifier {
             // Arrivals
             if (arrTime != null && i > 0) {
               final arrDt = DateTime.tryParse(arrTime)?.toLocal();
-              final isOld =
-                  arrDt != null && now.difference(arrDt).inMinutes > 15;
+              final isOld = arrDt != null && now.difference(arrDt).inMinutes > 15;
 
               if (!isOld) {
                 arrivals.add(StationBoardItem(
                   time: app_date.formatDateTime(arrTime),
-                  trainNumber: displayNumber,
-                  trainCategory: displayCategory,
+                  trainNumber: arrivalDisplayNumber,
+                  trainCategory: catSymbol,
                   carrier: carrierName,
                   direction: origin,
                   delayMinutes: st.arrivalDelayMinutes,

@@ -133,9 +133,9 @@ void main() {
         stationNames: {10: 'Gdańsk', 20: 'Tczew', 30: 'Malbork'},
       );
 
-      expect(pos.type, TrainStatusType.atStation);
+      expect(pos.type, TrainStatusType.betweenStations);
       expect(pos.currentStationId, 20);
-      expect(pos.description, contains('Tczew'));
+      expect(pos.description, contains('Ostatnia stacja: Tczew'));
     });
 
     test('Calculates betweenStations status correctly', () {
@@ -180,7 +180,7 @@ void main() {
       expect(pos.type, TrainStatusType.betweenStations);
       expect(pos.currentStationId, 10);
       expect(pos.nextStationId, 20);
-      expect(pos.description, contains('Gdańsk a Tczew'));
+      expect(pos.description, contains('Ostatnia stacja: Gdańsk'));
     });
   });
 

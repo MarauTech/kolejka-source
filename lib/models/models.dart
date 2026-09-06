@@ -333,17 +333,17 @@ class TrainOperation {
   String get statusText {
     switch (trainStatus) {
       case 'S':
-        return 'Nie rozpoczął';
+        return 'Jeszcze nie rozpoczął kursu';
       case 'P':
         return 'W trasie';
       case 'C':
-        return 'Zakończony';
+        return 'Kurs zakończony';
       case 'X':
         return 'Odwołany';
       case 'Q':
         return 'Częściowo odwołany';
       default:
-        return trainStatus ?? 'Nieznany';
+        return 'Status nieznany';
     }
   }
 
@@ -353,6 +353,7 @@ class TrainOperation {
 /// Enum for Train Position status
 enum TrainStatusType {
   notStarted,
+  inProgress,
   atStation,
   betweenStations,
   completed,
@@ -407,86 +408,62 @@ class TrainPositionInfo {
     }
 
     if (operation.trainStatus == 'S') {
-      final firstStName = routeStations.isNotEmpty
-          ? (stationNames[routeStations.first.stationId] ?? 'Stacja początkowa')
-          : '';
       return TrainPositionInfo(
         type: TrainStatusType.notStarted,
-        description: firstStName.isNotEmpty
-            ? 'Nie rozpoczął kursu ze stacji $firstStName'
-            : 'Nie rozpoczął kursu',
+        description: 'Jeszcze nie rozpoczął kursu',
       );
     }
 
     if (operation.trainStatus == 'C') {
-      final lastStName = routeStations.isNotEmpty
-          ? (stationNames[routeStations.last.stationId] ?? 'Stacja docelowa')
-          : '';
       return TrainPositionInfo(
         type: TrainStatusType.completed,
-        description: lastStName.isNotEmpty
-            ? 'Zakończył bieg na stacji $lastStName'
-            : 'Zakończył bieg',
+        description: 'Kurs zakończony',
         lastVisitedOrderNumber: routeStations.length,
       );
     }
 
     // Train is in progress ('P') - inspect stations
-    OperationStation? lastDeparted;
-    OperationStation? atStation;
+    OperationStation? lastConfirmed;
     OperationStation? nextStation;
 
     for (int i = 0; i < operation.stations.length; i++) {
       final st = operation.stations[i];
-      final hasActualArr = st.actualArrival != null;
-      final hasActualDep = st.actualDeparture != null;
+      final isConfirmed = st.isConfirmed || st.actualArrival != null || st.actualDeparture != null;
 
-      if (hasActualArr && !hasActualDep && i < operation.stations.length - 1) {
-        atStation = st;
-        if (i + 1 < operation.stations.length) {
-          nextStation = operation.stations[i + 1];
-        }
-        break;
-      } else if (hasActualDep) {
-        lastDeparted = st;
-        if (i + 1 < operation.stations.length) {
-          nextStation = operation.stations[i + 1];
-        }
+      if (isConfirmed) {
+        lastConfirmed = st;
+      } else if (lastConfirmed != null && nextStation == null) {
+        nextStation = st;
       }
     }
 
-    if (atStation != null) {
-      final stName = stationNames[atStation.stationId] ?? 'stacji';
-      return TrainPositionInfo(
-        type: TrainStatusType.atStation,
-        description: 'Na stacji: $stName',
-        currentStationId: atStation.stationId,
-        currentStationName: stName,
-        nextStationId: nextStation?.stationId,
-        nextStationName:
-            nextStation != null ? stationNames[nextStation.stationId] : null,
-        lastVisitedOrderNumber: atStation.actualSequenceNumber,
-      );
-    }
+    if (lastConfirmed != null) {
+      final stName = stationNames[lastConfirmed.stationId] ?? 'stacji';
+      final nextName = nextStation != null ? (stationNames[nextStation.stationId] ?? 'kolejnej stacji') : 'końca trasy';
+      
+      String timeStr = '';
+      if (lastConfirmed.actualDeparture != null) {
+        final t = DateTime.tryParse(lastConfirmed.actualDeparture!)?.toLocal();
+        if (t != null) timeStr = ' (odjazd ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')})';
+      } else if (lastConfirmed.actualArrival != null) {
+        final t = DateTime.tryParse(lastConfirmed.actualArrival!)?.toLocal();
+        if (t != null) timeStr = ' (przyjazd ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')})';
+      }
 
-    if (lastDeparted != null && nextStation != null) {
-      final depName = stationNames[lastDeparted.stationId] ?? 'stacji';
-      final nextName = stationNames[nextStation.stationId] ?? 'stacji';
       return TrainPositionInfo(
         type: TrainStatusType.betweenStations,
-        description: 'Między $depName a $nextName',
-        currentStationId: lastDeparted.stationId,
-        currentStationName: depName,
-        nextStationId: nextStation.stationId,
-        nextStationName: nextName,
-        lastVisitedOrderNumber: lastDeparted.actualSequenceNumber,
+        description: 'Ostatnia stacja: $stName$timeStr\nNastępna: $nextName',
+        currentStationId: lastConfirmed.stationId,
+        currentStationName: stName,
+        nextStationId: nextStation?.stationId,
+        nextStationName: nextStation != null ? stationNames[nextStation.stationId] : null,
+        lastVisitedOrderNumber: lastConfirmed.actualSequenceNumber,
       );
     }
 
     return TrainPositionInfo(
-      type: TrainStatusType.betweenStations,
+      type: TrainStatusType.inProgress,
       description: 'W trasie',
-      lastVisitedOrderNumber: lastDeparted?.actualSequenceNumber ?? 0,
     );
   }
 }

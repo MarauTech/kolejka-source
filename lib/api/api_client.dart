@@ -54,11 +54,56 @@ class ApiClient {
     }
   }
 
+  final Map<String, Future<Response>> _inFlightRequests = {};
+  DateTime? _rateLimitResetTime;
+
+  String _buildCacheKey(String path, Map<String, dynamic>? queryParameters) {
+    if (queryParameters == null || queryParameters.isEmpty) return path;
+    final sortedKeys = queryParameters.keys.toList()..sort();
+    final queryString = sortedKeys.map((k) => '$k=${queryParameters[k]}').join('&');
+    return '$path?$queryString';
+  }
+
   Future<Response> get(
     String path, {
     Map<String, dynamic>? queryParameters,
     bool retry = true,
   }) async {
+    // Check if we are currently rate limited
+    if (_rateLimitResetTime != null) {
+      if (DateTime.now().isBefore(_rateLimitResetTime!)) {
+        if (kDebugMode) {
+          debugPrint('[PDP] HTTP 429 active. Blocked request to $path');
+        }
+        throw ApiException(
+          statusCode: 429,
+          message: 'Przekroczono limit zapytań. Spróbuj ponownie za chwilę.',
+        );
+      } else {
+        _rateLimitResetTime = null;
+      }
+    }
+
+    final cacheKey = _buildCacheKey(path, queryParameters);
+    
+    if (_inFlightRequests.containsKey(cacheKey)) {
+      if (kDebugMode) {
+        debugPrint('[PDP] request deduplicated: $cacheKey');
+      }
+      return _inFlightRequests[cacheKey]!;
+    }
+
+    final future = _executeGet(path, queryParameters, retry);
+    _inFlightRequests[cacheKey] = future;
+    
+    try {
+      return await future;
+    } finally {
+      _inFlightRequests.remove(cacheKey);
+    }
+  }
+
+  Future<Response> _executeGet(String path, Map<String, dynamic>? queryParameters, bool retry) async {
     int attempts = 0;
     const maxRetries = 2;
 
@@ -72,6 +117,19 @@ class ApiClient {
         return response;
       } on DioException catch (e) {
         final statusCode = e.response?.statusCode;
+
+        if (statusCode == 429) {
+          final retryAfter = e.response?.headers.value('Retry-After');
+          int seconds = 60; // default 60s
+          if (retryAfter != null) {
+            final parsed = int.tryParse(retryAfter);
+            if (parsed != null) seconds = parsed;
+          }
+          _rateLimitResetTime = DateTime.now().add(Duration(seconds: seconds));
+          if (kDebugMode) {
+            debugPrint('[PDP] HTTP 429. Retry after $seconds s.');
+          }
+        }
 
         // Don't retry for client errors
         if (statusCode != null && statusCode >= 400 && statusCode < 500) {

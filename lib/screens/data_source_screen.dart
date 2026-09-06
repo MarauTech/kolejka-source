@@ -178,11 +178,15 @@ class _DataSourceScreenState extends State<DataSourceScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  _buildRow('Pozostało zapytań w bieżącej godzinie:',
-                      '${appState.hourlyRemaining ?? "brak limitu / cache"}'),
-                  const SizedBox(height: 8),
-                  _buildRow('Pozostało zapytań w bieżącej dobie:',
-                      '${appState.dailyRemaining ?? "brak limitu / cache"}'),
+                  if (_error != null && _error!.contains('limit'))
+                    const Text('Przekroczono limit API (429). Oczekuję na zresetowanie...', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600))
+                  else ...[
+                    _buildRow('Pozostało zapytań w bieżącej godzinie:',
+                        '${appState.hourlyRemaining ?? "brak limitu / cache"}'),
+                    const SizedBox(height: 8),
+                    _buildRow('Pozostało zapytań w bieżącej dobie:',
+                        '${appState.dailyRemaining ?? "brak limitu / cache"}'),
+                  ],
                   const SizedBox(height: 10),
                   Text(
                     'Słowniki stacji i relacji są buforowane lokalnie w pamięci urządzenia, aby minimalizować liczbę odpytań sieciowych.',

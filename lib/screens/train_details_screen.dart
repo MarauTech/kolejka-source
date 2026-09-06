@@ -22,6 +22,7 @@ class TrainDetailsScreen extends StatefulWidget {
 class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
   Timer? _autoRefreshTimer;
   bool _isLoading = false;
+  bool _routeLoadError = false;
   TrainOperation? _operation;
   TrainRoute? _fullRoute;
 
@@ -30,9 +31,11 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
     super.initState();
     _operation = widget.result.operation;
     _fullRoute = widget.result.route;
+    if (_fullRoute!.stations.isEmpty) {
+      _fullRoute = null; // force fetch if empty
+    }
     _fetchData();
 
-    // Auto-refresh once per 60 seconds if train is in progress
     if (widget.result.trainStatus == 'P') {
       _autoRefreshTimer = Timer.periodic(const Duration(seconds: 60), (_) {
         _fetchData();
@@ -48,7 +51,10 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
 
   Future<void> _fetchData() async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _routeLoadError = false;
+    });
 
     final appState = context.read<AppState>();
     final operatingDate = widget.result.operatingDate.isNotEmpty
@@ -56,37 +62,43 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
         : app_date.formatDateForApi(DateTime.now());
 
     try {
-      // 1. Fetch full route if stations are missing or empty
-      if (_fullRoute == null || _fullRoute!.stations.isEmpty) {
-        try {
-          final routeResp = await appState.api.getScheduleRoute(
-            widget.result.route.scheduleId,
-            widget.result.route.orderId,
-          );
+      final futures = <Future>[];
+
+      // 1. Fetch full route if missing
+      if (_fullRoute == null) {
+        futures.add(appState.api.getScheduleRoute(
+          widget.result.route.scheduleId,
+          widget.result.route.orderId,
+        ).then((routeResp) {
           if (routeResp.isNotEmpty && mounted) {
             setState(() {
               _fullRoute = TrainRoute.fromJson(routeResp);
             });
           }
-        } catch (e) {
+        }).catchError((e) {
           debugPrint('[TrainDetails] Error fetching route: $e');
-        }
+          if (mounted) setState(() => _routeLoadError = true);
+        }));
       }
 
       // 2. Fetch realtime operations
-      final updatedOp = await appState.getTrainOperation(
+      futures.add(appState.getTrainOperation(
         widget.result.route.scheduleId,
         widget.result.route.orderId,
         operatingDate,
-      );
+      ).then((updatedOp) {
+        if (mounted && updatedOp != null) {
+          setState(() {
+            _operation = updatedOp;
+          });
+        }
+      }).catchError((e) {
+        debugPrint('[TrainDetails] Error fetching realtime: $e');
+      }));
 
-      if (mounted && updatedOp != null) {
-        setState(() {
-          _operation = updatedOp;
-        });
+      if (futures.isNotEmpty) {
+        await Future.wait(futures);
       }
-    } catch (e) {
-      debugPrint('[TrainDetails] Error fetching realtime: $e');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -287,7 +299,7 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Bieżące położenie',
+                                    'Aktualny etap trasy',
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w600,
@@ -348,25 +360,45 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Text(
-                  'Pełna trasa pociągu (${route.stations.length} stacji)',
+                  _isLoading && _fullRoute == null
+                      ? 'Pobieranie trasy...'
+                      : _routeLoadError
+                          ? 'Nie udało się pobrać trasy'
+                          : route.stations.isEmpty
+                              ? 'Trasa nie zawiera stacji'
+                              : 'Pełna trasa pociągu (${route.stations.length} stacji)',
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
 
-              Card(
-                margin: const EdgeInsets.symmetric(horizontal: 12),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Column(
-                    children: List.generate(route.stations.length, (index) {
-                      final stop = route.stations[index];
-                      final stationName =
-                          appState.getStationName(stop.stationId);
-                      final realTimeStop = opStationsMap[stop.stationId];
+              if (_isLoading && _fullRoute == null)
+                const Padding(
+                  padding: EdgeInsets.all(32.0),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_routeLoadError)
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Center(
+                    child: Icon(Icons.error_outline,
+                        color: theme.colorScheme.error, size: 48),
+                  ),
+                )
+              else if (route.stations.isNotEmpty)
+                Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Column(
+                      children: List.generate(route.stations.length, (index) {
+                        final stop = route.stations[index];
+                        final stationName =
+                            appState.getStationName(stop.stationId);
+                        final realTimeStop = opStationsMap[stop.stationId];
 
                       final isUserSegment = hasUserSegment &&
                           (index >= userFromIdx && index <= userToIdx);
