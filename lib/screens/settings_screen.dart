@@ -131,11 +131,11 @@ class SettingsScreen extends StatelessWidget {
           ),
 
           const SizedBox(height: 12),
-          // Section: Dane i integracje
+          // Section: Diagnostyka i sieci
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text(
-              'DANE I SIECI',
+              'DIAGNOSTYKA I SIECI',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
@@ -145,11 +145,10 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
           ListTile(
-            leading: Icon(Icons.cloud_sync_outlined,
-                color: theme.colorScheme.primary),
-            title: const Text('Usługa i źródło danych'),
+            leading: Icon(Icons.dns_outlined, color: theme.colorScheme.primary),
+            title: const Text('Status API i diagnostyka'),
             subtitle: const Text(
-                'API PKP PLK, limity zapytań, wersje rozkładu i proxy'),
+                'Wersje danych rozkładu, wykonania i limity zapytań'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.push(
@@ -177,7 +176,8 @@ class SettingsScreen extends StatelessWidget {
           ListTile(
             leading: Icon(Icons.info_outline, color: theme.colorScheme.primary),
             title: const Text('O aplikacji'),
-            subtitle: const Text('Autorzy, wersja i nota prawna'),
+            subtitle: const Text(
+                'Twórcy (Adam W. & MarauTech), wersja i nota prawna'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.push(

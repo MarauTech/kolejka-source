@@ -48,6 +48,24 @@ class _DataSourceScreenState extends State<DataSourceScreen> {
     }
   }
 
+  Widget _buildRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 13, color: Colors.grey),
+          ),
+        ),
+        Text(
+          value,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
@@ -55,7 +73,7 @@ class _DataSourceScreenState extends State<DataSourceScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Usługa i źródło danych',
+        title: const Text('Diagnostyka i status API',
             style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
@@ -95,17 +113,14 @@ class _DataSourceScreenState extends State<DataSourceScreen> {
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        'PKP Polskie Linie Kolejowe S.A.',
+                        _error != null
+                            ? 'Błąd połączenia'
+                            : 'Połączono z API PLK',
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Oficjalny portal Otwartych Danych Kolejowych (PDP API PLK): pdp-api.plk-sa.pl',
-                    style: TextStyle(fontSize: 13),
                   ),
                   const SizedBox(height: 12),
                   const Divider(height: 1),
@@ -120,16 +135,16 @@ class _DataSourceScreenState extends State<DataSourceScreen> {
                         style:
                             const TextStyle(color: Colors.red, fontSize: 13)),
                   ] else if (_version != null) ...[
-                    _buildRow('Wersja danych:',
+                    _buildRow('Wersja danych ogólnych:',
                         _version!.dataVersion ?? 'Brak danych'),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     _buildRow('Wersja rozkładu jazdy:',
                         _version!.schedulesVersion ?? 'Brak danych'),
-                    const SizedBox(height: 6),
-                    _buildRow('Wersja wykonania (ruch):',
+                    const SizedBox(height: 8),
+                    _buildRow('Wersja wykonania ruchu:',
                         _version!.operationsVersion ?? 'Brak danych'),
-                    const SizedBox(height: 6),
-                    _buildRow('Sygnatura czasowa:',
+                    const SizedBox(height: 8),
+                    _buildRow('Czas generowania danych:',
                         _version!.timestamp ?? 'Brak danych'),
                   ],
                 ],
@@ -163,14 +178,14 @@ class _DataSourceScreenState extends State<DataSourceScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  _buildRow('Pozostało zapytań w tej godzinie:',
-                      '${appState.hourlyRemaining ?? "brak danych"}'),
-                  const SizedBox(height: 6),
-                  _buildRow('Pozostało zapytań w tej dobie:',
-                      '${appState.dailyRemaining ?? "brak danych"}'),
+                  _buildRow('Pozostało zapytań w bieżącej godzinie:',
+                      '${appState.hourlyRemaining ?? "brak limitu / cache"}'),
+                  const SizedBox(height: 8),
+                  _buildRow('Pozostało zapytań w bieżącej dobie:',
+                      '${appState.dailyRemaining ?? "brak limitu / cache"}'),
                   const SizedBox(height: 10),
                   Text(
-                    'Aplikacja wykorzystuje inteligentne lokalne buforowanie słowników i rozkładów, aby ograniczyć liczbę zapytań do API.',
+                    'Słowniki stacji i relacji są buforowane lokalnie w pamięci urządzenia, aby minimalizować liczbę odpytań sieciowych.',
                     style: TextStyle(
                         fontSize: 12,
                         color: theme.colorScheme.onSurfaceVariant),
@@ -182,7 +197,7 @@ class _DataSourceScreenState extends State<DataSourceScreen> {
 
           const SizedBox(height: 16),
 
-          // Cloudflare Worker Proxy Card
+          // Security & Architecture Card
           Card(
             elevation: 1,
             shape:
@@ -198,7 +213,7 @@ class _DataSourceScreenState extends State<DataSourceScreen> {
                           size: 22, color: theme.colorScheme.primary),
                       const SizedBox(width: 8),
                       Text(
-                        'Bezpieczna usługa pośrednicząca (Proxy)',
+                        'Bezpieczeństwo połączeń',
                         style: theme.textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
@@ -207,49 +222,12 @@ class _DataSourceScreenState extends State<DataSourceScreen> {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    'Połączenie z API PKP PLK odbywa się przez zabezpieczoną usługę pośredniczącą. Klucz autoryzacyjny do API jest bezpiecznie przechowywany po stronie serwera proxy i nie jest zapisany wewnątrz pliku aplikacji mobilnej, co zapewnia pełne bezpieczeństwo uwierzytelnienia.',
+                    'Wszystkie zapytania są szyfrowane (HTTPS / TLS). Klucze dostępu do API nie znajdują się w kodzie aplikacji mobilnej, lecz są bezpiecznie izolowane na serwerze pośredniczącym.',
                     style: TextStyle(
-                        fontSize: 13,
-                        height: 1.4,
-                        color: theme.colorScheme.onSurfaceVariant),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // OpenStreetMap note
-          Card(
-            elevation: 1,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.map_outlined,
-                          size: 22, color: theme.colorScheme.primary),
-                      const SizedBox(width: 8),
-                      Text(
-                        'OpenStreetMap (OSM)',
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Dane współrzędnych stacji kolejowych do wykrywania najbliższej stacji pochodzą ze społecznościowego projektu OpenStreetMap (licencja ODbL). Odpytywanie odbywa się poprzez serwery Overpass API oraz Nominatim.',
-                    style: TextStyle(
-                        fontSize: 13,
-                        height: 1.4,
-                        color: theme.colorScheme.onSurfaceVariant),
+                      fontSize: 13,
+                      height: 1.4,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
@@ -257,24 +235,6 @@ class _DataSourceScreenState extends State<DataSourceScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildRow(String label, String value) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Expanded(
-          child: Text(
-            label,
-            style: const TextStyle(fontSize: 13, color: Colors.grey),
-          ),
-        ),
-        Text(
-          value,
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-        ),
-      ],
     );
   }
 }
