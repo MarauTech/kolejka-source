@@ -51,7 +51,7 @@ void main() {
     await tester.enterText(timeFields.last, '45');
     await tester.tap(find.text('OK'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('WYSZUKAJ'));
+    await tester.tap(find.text('Wyszukaj połączenia'));
     await tester.pumpAndSettle();
     expect(state.searchedDate?.day, 15);
     expect(state.searchedTime?.minute, 45);
@@ -64,7 +64,8 @@ void main() {
     expect(saved.fromStationId, 1);
     expect(saved.toStationId, 2);
     expect(saved.fromStationName, 'Opole Główne');
-    await tester.tap(find.byTooltip('Usuń trasę'));
+    expect(find.text('Ulubione trasy'), findsNothing);
+    await tester.tap(find.byTooltip('Usuń trasę z ulubionych'));
     await tester.pumpAndSettle();
     expect(state.favoriteRoutes, isEmpty);
     expect(state.cache.loadFavoriteRoutes(), isEmpty);
@@ -142,8 +143,8 @@ void main() {
       expect(find.text('30521'), findsOneWidget);
       expect(find.text('1 przesiadka'), findsNothing);
       expect(find.textContaining('1 przesiadka'), findsOneWidget);
-      expect(find.text('Per. II / Tor 7'), findsOneWidget);
-      expect(find.text('Per. IV / Tor 3'), findsOneWidget);
+      expect(find.text('Przyj. Per. II/7'), findsOneWidget);
+      expect(find.text('Odj. Per. IV/3'), findsOneWidget);
       expect(find.textContaining('Przewidywany: 3 h 5 min'), findsOneWidget);
       expect(tester.widget<Text>(find.text('10:05')).style?.color, Colors.red);
       expect(tester.widget<Text>(find.text('10:00')).style?.decoration,

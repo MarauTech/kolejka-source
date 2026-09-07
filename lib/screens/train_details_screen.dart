@@ -7,6 +7,7 @@ import '../models/train_position_resolver.dart';
 import '../models/station_mapping.dart';
 import '../models/route_presentation.dart';
 import '../utils/category_utils.dart';
+import '../widgets/train_type_icon.dart';
 import '../utils/date_utils.dart' as app_date;
 import '../widgets/route_stop.dart';
 
@@ -290,6 +291,11 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
                                 runSpacing: 8,
                                 crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
+                                  TrainTypeIcon(
+                                      category: category,
+                                      size: 28,
+                                      color: categoryColor(category,
+                                          isDark: isDark)),
                                   if (category.isNotEmpty)
                                     Container(
                                         padding: const EdgeInsets.symmetric(

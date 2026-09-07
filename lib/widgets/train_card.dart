@@ -4,19 +4,21 @@ import '../models/station_mapping.dart';
 import '../utils/category_utils.dart';
 import '../utils/date_utils.dart' as app_date;
 import '../utils/format_utils.dart';
+import 'train_type_icon.dart';
 
 /// Compact connection row, sharing the visual rhythm of the station board.
 class TrainCard extends StatelessWidget {
   final ConnectionResult connection;
   final VoidCallback onTap;
   const TrainCard({super.key, required this.connection, required this.onTap});
-  Widget _time(String planned, String? actual, int delay, bool cancelled) {
+  Widget _time(String planned, String? actual, int delay, bool cancelled,
+      {double fontSize = 17}) {
     final display = app_date.delayedTime(planned, actual, delay);
     final original = app_date.formatTimeSafe(planned);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(display,
           style: TextStyle(
-              fontSize: 20,
+              fontSize: fontSize,
               fontWeight: FontWeight.bold,
               color: delay > 0 || cancelled ? Colors.red : null)),
       if (display != original && original != '--:--')
@@ -58,11 +60,12 @@ class TrainCard extends StatelessWidget {
         arr?.actualArrival != null;
     final platform = formatPlatformTrack(
         dep?.platform ?? c.fromStop.departurePlatform,
-        dep?.track ?? c.fromStop.departureTrack);
+        dep?.track ?? c.fromStop.departureTrack,
+        compact: true);
     final arrivalPlatform = formatPlatformTrack(
         arr?.platform ?? lastLeg.toStop.arrivalPlatform,
-        arr?.track ?? lastLeg.toStop.arrivalTrack);
-    final cat = c.route.commercialCategorySymbol ?? c.commercialCategory;
+        arr?.track ?? lastLeg.toStop.arrivalTrack,
+        compact: true);
     final operatingDate = c.operatingDate.isNotEmpty
         ? c.operatingDate
         : c.operation?.operatingDate ?? '';
@@ -94,64 +97,110 @@ class TrainCard extends StatelessWidget {
         : hasRealtime
             ? Colors.green
             : theme.colorScheme.onSurfaceVariant;
+    Widget identity(ConnectionResult leg) {
+      final category =
+          leg.route.commercialCategorySymbol ?? leg.commercialCategory;
+      final color = categoryColor(category, isDark: dark);
+      return Wrap(
+          spacing: 6,
+          runSpacing: 5,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            TrainTypeIcon(category: category, size: 24, color: color),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              decoration: BoxDecoration(
+                  color: color, borderRadius: BorderRadius.circular(4)),
+              child: DefaultTextStyle(
+                style: TextStyle(
+                    fontSize: 11,
+                    fontFamily: theme.textTheme.bodySmall?.fontFamily,
+                    fontWeight: FontWeight.w700,
+                    color: categoryTextColor(category, isDark: dark)),
+                child: Wrap(spacing: 4, children: [
+                  if (category.isNotEmpty) Text(category),
+                  Text(leg.route.nationalNumber ?? leg.trainNumber),
+                ]),
+              ),
+            ),
+            if (leg.trainName.isNotEmpty)
+              Text(leg.trainName,
+                  style: TextStyle(
+                      fontSize: 11, color: theme.colorScheme.onSurfaceVariant)),
+          ]);
+    }
+
     return Material(
         color: theme.colorScheme.surface,
         child: InkWell(
           onTap: onTap,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
                 border: Border(
                     bottom: BorderSide(
                         color: theme.colorScheme.outlineVariant, width: 0.6))),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Wrap(
-                  spacing: 10,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    _time(c.departureTime, dep?.actualDeparture, depDelay,
-                        cancelled),
-                    const Icon(Icons.arrow_forward, size: 16),
-                    _time(
-                        c.arrivalTime, arr?.actualArrival, arrDelay, cancelled),
-                    Text(statusText,
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: statusColor)),
-                  ]),
-              const SizedBox(height: 5),
-              Text('${c.fromStationName} \u2192 ${c.toStationName}',
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 5),
-              Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    if (cat.isNotEmpty)
-                      Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 5, vertical: 2),
-                          decoration: BoxDecoration(
-                              color: categoryColor(cat, isDark: dark),
-                              borderRadius: BorderRadius.circular(3)),
-                          child: Text(cat,
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color:
-                                      categoryTextColor(cat, isDark: dark)))),
-                    Text(c.route.nationalNumber ?? c.trainNumber,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 13)),
-                    if (c.trainName.isNotEmpty)
-                      Text(c.trainName, style: const TextStyle(fontSize: 12)),
-                  ]),
-              const SizedBox(height: 4),
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                SizedBox(
+                    width: 58,
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Semantics(
+                              label: 'Odjazd',
+                              child: _time(c.departureTime,
+                                  dep?.actualDeparture, depDelay, cancelled)),
+                          Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 3),
+                              child: Icon(Icons.south,
+                                  size: 11, color: theme.colorScheme.outline)),
+                          Semantics(
+                              label: 'Przyjazd',
+                              child: _time(c.arrivalTime, arr?.actualArrival,
+                                  arrDelay, cancelled,
+                                  fontSize: 14)),
+                        ])),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                      identity(c),
+                      const SizedBox(height: 6),
+                      Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.arrow_forward,
+                                size: 14, color: theme.colorScheme.outline),
+                            const SizedBox(width: 5),
+                            Expanded(
+                                child: Text(c.toStationName,
+                                    style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600))),
+                          ]),
+                      if (c.secondLeg != null) ...[
+                        const SizedBox(height: 6),
+                        Text('Przesiadka: ${lastLeg.fromStationName}',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: theme.colorScheme.onSurfaceVariant)),
+                        const SizedBox(height: 4),
+                        identity(lastLeg),
+                      ],
+                      const SizedBox(height: 6),
+                      Text(statusText,
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: statusColor)),
+                    ])),
+                Icon(Icons.chevron_right,
+                    size: 16, color: theme.colorScheme.outline),
+              ]),
+              const SizedBox(height: 8),
               Text(
                   [
                     if (durationText.isNotEmpty) durationText,
@@ -163,45 +212,21 @@ class TrainCard extends StatelessWidget {
                   ].join(' · '),
                   style: TextStyle(
                       fontSize: 11, color: theme.colorScheme.onSurfaceVariant)),
-              if (c.secondLeg != null)
+              if (platform != null || arrivalPlatform != null)
                 Padding(
                     padding: const EdgeInsets.only(top: 4),
-                    child: Wrap(spacing: 6, children: [
-                      Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 5, vertical: 2),
-                          color: categoryColor(
-                              lastLeg.route.commercialCategorySymbol ??
-                                  lastLeg.commercialCategory,
-                              isDark: dark),
-                          child: Text(
-                              lastLeg.route.commercialCategorySymbol ??
-                                  lastLeg.commercialCategory,
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: categoryTextColor(
-                                      lastLeg.route.commercialCategorySymbol ??
-                                          lastLeg.commercialCategory,
-                                      isDark: dark)))),
-                      Text(lastLeg.route.nationalNumber ?? lastLeg.trainNumber,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w600, fontSize: 13)),
-                      if (lastLeg.trainName.isNotEmpty)
-                        Text(lastLeg.trainName,
-                            style: const TextStyle(fontSize: 12)),
+                    child: Wrap(spacing: 12, runSpacing: 3, children: [
+                      if (platform != null)
+                        Text('Odj. $platform',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: theme.colorScheme.onSurfaceVariant)),
+                      if (arrivalPlatform != null)
+                        Text('Przyj. $arrivalPlatform',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: theme.colorScheme.onSurfaceVariant)),
                     ])),
-              if (platform != null)
-                Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Wrap(spacing: 4, children: [
-                      const Text('Odjazd:', style: TextStyle(fontSize: 11)),
-                      Text(platform, style: const TextStyle(fontSize: 11))
-                    ])),
-              if (arrivalPlatform != null)
-                Wrap(spacing: 4, children: [
-                  const Text('Przyjazd:', style: TextStyle(fontSize: 11)),
-                  Text(arrivalPlatform, style: const TextStyle(fontSize: 11))
-                ]),
             ]),
           ),
         ));

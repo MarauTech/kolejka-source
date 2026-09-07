@@ -6,6 +6,7 @@ import '../utils/category_utils.dart';
 import '../utils/format_utils.dart';
 import '../utils/date_utils.dart' as app_date;
 import '../widgets/station_search.dart';
+import '../widgets/train_type_icon.dart';
 import 'train_details_screen.dart';
 
 class StationScreen extends StatefulWidget {
@@ -709,14 +710,17 @@ class _StationScreenState extends State<StationScreen>
                         children: [
                           if (item.trainCategory.isNotEmpty)
                             Container(
-                              width: 18,
-                              height: 18,
+                              width: 24,
+                              height: 24,
                               decoration: BoxDecoration(
                                 color: catColor.withValues(alpha: 0.16),
                                 borderRadius: BorderRadius.circular(3),
                               ),
-                              child:
-                                  Icon(Icons.train, size: 13, color: catColor),
+                              padding: const EdgeInsets.all(2),
+                              child: TrainTypeIcon(
+                                  category: item.trainCategory,
+                                  size: 20,
+                                  color: catColor),
                             ),
                           if (item.trainCategory.isNotEmpty)
                             const SizedBox(width: 5),

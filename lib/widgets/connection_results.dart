@@ -16,10 +16,16 @@ class ConnectionResults extends StatefulWidget {
 
 class _ConnectionResultsState extends State<ConnectionResults> {
   bool _showEarlier = false;
+  static const _pageSize = 8;
+  int _visibleCount = _pageSize;
   @override
   void didUpdateWidget(ConnectionResults oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.results != widget.results) _showEarlier = false;
+    if (oldWidget.results != widget.results ||
+        oldWidget.selectedDeparture != widget.selectedDeparture) {
+      _showEarlier = false;
+      _visibleCount = _pageSize;
+    }
   }
 
   void _open(ConnectionResult result) {
@@ -73,23 +79,45 @@ class _ConnectionResultsState extends State<ConnectionResults> {
     }
     Widget row(ConnectionResult r) =>
         TrainCard(connection: r, onTap: () => _open(r));
+    final theme = Theme.of(context);
+    final visible = upcoming.take(_visibleCount).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      const SizedBox(height: 12),
-      Text('Wyniki połączeń',
-          style: Theme.of(context)
-              .textTheme
-              .titleSmall
-              ?.copyWith(fontWeight: FontWeight.bold)),
-      const Divider(),
+      const SizedBox(height: 20),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Text('Wyniki połączeń',
+            style: theme.textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.bold)),
+      ),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerLow,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+        ),
+        child: Wrap(spacing: 8, runSpacing: 4, children: [
+          Icon(Icons.calendar_today_outlined,
+              size: 14, color: theme.colorScheme.onSurfaceVariant),
+          Text(app_date.formatDateDisplay(widget.selectedDeparture),
+              style: TextStyle(
+                  fontSize: 12, color: theme.colorScheme.onSurfaceVariant)),
+          Text(
+              'Od ${app_date.formatTimeDisplay(widget.selectedDeparture.hour, widget.selectedDeparture.minute)}',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.primary)),
+        ]),
+      ),
       if (widget.results.isEmpty) ...[
         const Text('Nie znaleziono połączeń'),
         const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
             child: Text('Zmień godzinę, datę lub stacje i spróbuj ponownie.')),
       ],
-      ...upcoming.map(row),
       if (earlier.isNotEmpty) ...[
         TextButton.icon(
+            key: const ValueKey('earlier-connections'),
             onPressed: () => setState(() => _showEarlier = !_showEarlier),
             icon: Icon(_showEarlier ? Icons.expand_less : Icons.expand_more),
             label: Text(_showEarlier
@@ -100,9 +128,18 @@ class _ConnectionResultsState extends State<ConnectionResults> {
             curve: Curves.easeOutCubic,
             child: Column(
                 children: _showEarlier
-                    ? [const Divider(thickness: 2), ...earlier.map(row)]
+                    ? [...earlier.map(row), const Divider(thickness: 2)]
                     : [])),
       ],
+      ...visible.map(row),
+      if (upcoming.length > visible.length)
+        TextButton.icon(
+          key: const ValueKey('later-connections'),
+          onPressed: () => setState(() => _visibleCount += _pageSize),
+          icon: const Icon(Icons.expand_more),
+          label: Text(
+              'Pokaż późniejsze połączenia (${upcoming.length - visible.length})'),
+        ),
     ]);
   }
 }

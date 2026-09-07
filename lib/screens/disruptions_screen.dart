@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../models/models.dart';
 import '../utils/category_utils.dart';
+import '../utils/date_utils.dart' as app_date;
 import '../utils/search_utils.dart';
 
 class DisruptionsScreen extends StatefulWidget {
@@ -15,6 +16,7 @@ class DisruptionsScreen extends StatefulWidget {
 class _DisruptionsScreenState extends State<DisruptionsScreen> {
   bool _isLoading = false;
   String? _errorMessage;
+  DateTime? _generatedAt;
   List<Disruption> _disruptions = [];
   Map<String, String> _disruptionTypes = {};
   Map<String, String> _stationsMap = {};
@@ -46,12 +48,17 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
 
       final rawStations = data['stations'] as Map<String, dynamic>? ?? {};
       final stations = rawStations.map((k, v) => MapEntry(k, v.toString()));
+      // This is the snapshot time, not the creation time of any disruption.
+      final generatedAt = data['generatedAt'] ?? data['ts'];
 
       if (mounted) {
         setState(() {
           _disruptions = parsed;
           _disruptionTypes = types;
           _stationsMap = stations;
+          _generatedAt = generatedAt == null
+              ? null
+              : app_date.parsePdpDateTime(generatedAt.toString());
         });
       }
     } catch (e) {
@@ -262,6 +269,13 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
                     style: const TextStyle(fontSize: 14, height: 1.4),
                   ),
                   const SizedBox(height: 16),
+                  Text(
+                    'Godzina dodania: źródło nie udostępnia tej informacji.',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 16),
                   if (item.affectedRoutes.isNotEmpty) ...[
                     Text(
                       'Dotknięte pociągi (${item.affectedRoutes.length}):',
@@ -311,7 +325,23 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
           ),
         ],
       ),
-      body: _buildBody(appState),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_generatedAt case final generatedAt?)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                'Dane z ${app_date.formatDateDisplay(generatedAt)}, '
+                '${app_date.formatTimeDisplay(generatedAt.hour, generatedAt.minute)}',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+            ),
+          Expanded(child: _buildBody(appState)),
+        ],
+      ),
     );
   }
 

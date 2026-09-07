@@ -1,5 +1,15 @@
 ﻿# Historia zmian
 
+## 1.0.0-beta.4 — 2026-09-07
+
+- Połączenia są pierwszą zakładką i ekranem startowym aplikacji.
+- Wyniki mają układ tablicy z wyraźnymi godzinami, oznaczeniami pociągów i cienkimi separatorami.
+- Wcześniejsze połączenia rozwijają się nad późniejszymi; kolejne późniejsze wyniki można dodawać na dole listy.
+- Po wyszukaniu znika sekcja ulubionych tras, a formularz zmienia się w zwarty nagłówek z możliwością edycji.
+- Oddzielne ikony czoła pociągu regionalnego i opływowego pociągu dalekobieżnego są wspólne dla wyników i tablic stacyjnych.
+- Lista utrudnień pokazuje datę i godzinę danych przekazaną przez źródło. Szczegóły wyjaśniają brak godziny dodania pojedynczego komunikatu w API.
+- Wyszukiwarka wyjaśnia przekroczenie limitu zapytań i brak połączenia z internetem.
+
 ## 1.0.0-beta.3 — 2026-09-07
 
 - Tablice odjazdów i przyjazdów mają zwarty układ wzorowany na tablicach kolejowych: godzina, opóźnienie, pociąg, kierunek i peron są widoczne bez otwierania szczegółów.

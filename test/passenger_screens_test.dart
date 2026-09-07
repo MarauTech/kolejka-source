@@ -84,7 +84,7 @@ void main() {
       }
       expect(find.byType(TrainCard), findsOneWidget);
       expect(find.text('Ulubione trasy'), findsOneWidget);
-      expect(find.text('Per. IV / Tor 3'), findsOneWidget);
+      expect(find.text('Odj. Per. IV/3'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await show(const SearchScreen());
       await tester.drag(

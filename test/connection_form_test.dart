@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:trainly/app_state.dart';
+import 'package:trainly/api/api_client.dart';
 import 'package:trainly/models/models.dart';
 import 'package:trainly/screens/search_screen.dart';
 import 'package:trainly/widgets/station_search.dart';
@@ -27,6 +28,36 @@ class SearchFixture extends FixtureState {
 }
 
 void main() {
+  testWidgets('Rate limit explains retry and does not retain stale journeys',
+      (tester) async {
+    final state = SearchFixture();
+    await tester.pumpWidget(ChangeNotifierProvider<AppState>.value(
+        value: state,
+        child: MaterialApp(
+            home: SearchScreen(
+                initialFromStation: Station(id: 1, name: 'Opole Główne'),
+                initialToStation: Station(id: 2, name: 'Gliwice')))));
+    await tester.tap(find.text('Wyszukaj połączenia'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ConnectionResults), findsOneWidget);
+    await tester.tap(find.byTooltip('Zmień trasę lub termin'));
+    await tester.pumpAndSettle();
+    state.pending = Completer<List<ConnectionResult>>();
+    await tester.tap(find.text('Wyszukaj połączenia'));
+    await tester.pump();
+    expect(find.byType(ConnectionResults), findsNothing);
+    state.pending!.completeError(
+        ApiException(statusCode: 429, message: 'secret_payload'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Spróbuj ponownie za minutę.'), findsOneWidget);
+    expect(find.textContaining('secret_payload'), findsNothing);
+    expect(find.text('Ulubione trasy'), findsNothing);
+    expect(find.byType(ConnectionResults), findsNothing);
+    expect(find.byKey(const ValueKey('origin-field')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    state.dispose();
+  });
   for (final dark in [false, true]) {
     for (final width in [320.0, 360.0, 384.0, 411.0]) {
       testWidgets(
@@ -81,14 +112,16 @@ void main() {
         expect(state.searchedDate, DateUtils.dateOnly(DateTime.now()));
         expect(state.searchedTime, TimeOfDay.fromDateTime(DateTime.now()));
         expect(find.text('Wyszukiwanie połączeń...'), findsOneWidget);
-        expect(find.text('WYSZUKAJ'), findsOneWidget);
+        expect(find.text('Wyszukaj połączenia'), findsOneWidget);
+        expect(find.text('Ulubione trasy'), findsNothing);
         expect(origin, findsOneWidget);
         state.pending!.complete([connectionFixture()]);
         await tester.pumpAndSettle();
         expect(find.byType(SearchScreen), findsOneWidget);
         expect(find.byType(ConnectionResults), findsOneWidget);
-        expect(tester.getTopLeft(find.text('Ulubione trasy')).dy,
-            greaterThan(tester.getTopLeft(find.text('Wyniki połączeń')).dy));
+        expect(find.text('Ulubione trasy'), findsNothing);
+        expect(origin, findsNothing);
+        expect(find.byTooltip('Zmień trasę lub termin'), findsOneWidget);
         final earlier = find.textContaining('Pokaż wcześniejsze połączenia');
         if (earlier.evaluate().isNotEmpty) {
           await tester.ensureVisible(earlier);
@@ -98,6 +131,12 @@ void main() {
         expect(find.byType(TrainCard), findsOneWidget);
         expect(tester.takeException(), isNull);
         expect(find.byType(ErrorWidget), findsNothing);
+        await tester.ensureVisible(find.byTooltip('Zmień trasę lub termin'));
+        await tester.tap(find.byTooltip('Zmień trasę lub termin'));
+        await tester.pumpAndSettle();
+        expect(
+            tester.widget<StationSearchField>(origin).selectedStation?.id, 1);
+        expect(find.text('Ulubione trasy'), findsNothing);
         await tester.pumpWidget(const SizedBox());
         state.dispose();
       });
@@ -114,7 +153,7 @@ void main() {
             home: SearchScreen(
                 initialFromStation: Station(id: 1, name: 'Opole Główne'),
                 initialToStation: Station(id: 2, name: 'Gliwice')))));
-    await tester.tap(find.text('WYSZUKAJ'));
+    await tester.tap(find.text('Wyszukaj połączenia'));
     await tester.pump();
     await tester.tap(find.byTooltip('Zamień stacje'));
     await tester.pump();
@@ -122,11 +161,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(ConnectionResults), findsNothing);
     state.pending = Completer<List<ConnectionResult>>();
-    await tester.tap(find.text('WYSZUKAJ'));
+    await tester.tap(find.text('Wyszukaj połączenia'));
     await tester.pump();
     state.pending!.complete([]);
     await tester.pumpAndSettle();
     expect(find.text('Nie znaleziono połączeń'), findsOneWidget);
+    expect(find.text('Ulubione trasy'), findsNothing);
     await tester.pumpWidget(MaterialApp(
         home: Scaffold(
             body: ConnectionResults(

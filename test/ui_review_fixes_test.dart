@@ -97,7 +97,7 @@ void main() {
     state.dispose();
   });
 
-  testWidgets('Main navigation labels stay on one line at 320 dp',
+  testWidgets('Journey planning opens first and is the first tab at 320 dp',
       (tester) async {
     tester.view.physicalSize = const Size(320, 800);
     tester.view.devicePixelRatio = 1;
@@ -107,8 +107,12 @@ void main() {
     await tester.pumpWidget(ChangeNotifierProvider<AppState>.value(
         value: state, child: const MaterialApp(home: MainScreen())));
     await tester.pumpAndSettle();
-    final labelSize = tester.getSize(find.text('Trasy'));
-    expect(labelSize.height, lessThan(18));
+    final navigation = tester.widget<NavigationBar>(find.byType(NavigationBar));
+    expect(navigation.selectedIndex, 0);
+    expect((navigation.destinations.first as NavigationDestination).label,
+        'Połączenia');
+    expect(find.text('Połączenia kolejowe'), findsOneWidget);
+    expect(find.text('Tablica stacyjna'), findsNothing);
     expect(tester.takeException(), isNull);
     state.dispose();
   });

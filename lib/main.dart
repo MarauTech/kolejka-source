@@ -88,7 +88,7 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  // Tablica is the default starting tab (index 0)
+  // Journey planning is the first destination, including on a fresh launch.
   int _currentIndex = 0;
 
   FavoriteRoute? _requestedRoute;
@@ -109,7 +109,6 @@ class _MainScreenState extends State<MainScreen> {
     final theme = Theme.of(context);
     final requestedRoute = _requestedRoute;
     final screens = <Widget>[
-      const StationScreen(),
       SearchScreen(
         key: ValueKey('connections-$_searchRequest'),
         initialFromStation: requestedRoute == null
@@ -124,12 +123,13 @@ class _MainScreenState extends State<MainScreen> {
                 name: requestedRoute.toStationName),
         searchOnStart: requestedRoute != null,
       ),
+      const StationScreen(),
       const TrainSearchScreen(),
       FavoritesScreen(onOpenRoute: (route) {
         setState(() {
           _requestedRoute = route;
           _searchRequest++;
-          _currentIndex = 1;
+          _currentIndex = 0;
         });
       }),
       const MoreScreen(),
@@ -153,16 +153,15 @@ class _MainScreenState extends State<MainScreen> {
         },
         destinations: [
           NavigationDestination(
+            icon: const Icon(Icons.route_outlined),
+            selectedIcon: Icon(Icons.route, color: theme.colorScheme.primary),
+            label: 'Połączenia',
+          ),
+          NavigationDestination(
             icon: const Icon(Icons.table_chart_outlined),
             selectedIcon:
                 Icon(Icons.table_chart, color: theme.colorScheme.primary),
             label: 'Tablica',
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.alt_route_outlined),
-            selectedIcon:
-                Icon(Icons.alt_route, color: theme.colorScheme.primary),
-            label: 'Trasy',
           ),
           NavigationDestination(
             icon: const Icon(Icons.train_outlined),
