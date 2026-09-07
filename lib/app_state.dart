@@ -29,11 +29,14 @@ class AppState extends ChangeNotifier {
   List<StationBoardItem> stationArrivals = [];
   DateTime? stationBoardLastUpdated;
   bool isStationBoardLoading = false;
+  bool isStationBoardLoadingMore = false;
+  bool stationBoardCanLoadMore = true;
   String? stationBoardError;
 
   // Favorites
   List<FavoriteStation> favoriteStations = [];
   List<FavoriteRoute> favoriteRoutes = [];
+  List<Station> recentStations = [];
 
   // Theme
   ThemeMode themeMode = ThemeMode.system;
@@ -79,6 +82,17 @@ class AppState extends ChangeNotifier {
     final favRoutesJson = cache.loadFavoriteRoutes();
     favoriteRoutes =
         favRoutesJson.map((e) => FavoriteRoute.fromJson(e)).toList();
+    recentStations =
+        cache.loadRecentStations().map((e) => Station.fromJson(e)).toList();
+  }
+
+  Future<void> _rememberRecentStation(Station station) async {
+    recentStations = [
+      station,
+      ...recentStations.where((candidate) => candidate.id != station.id),
+    ].take(6).toList();
+    await cache.saveRecentStations(
+        recentStations.map((station) => station.toJson()).toList());
   }
 
   bool isStationFavorite(int stationId) {
@@ -366,6 +380,7 @@ class AppState extends ChangeNotifier {
     isStationFromGps = false;
     locationMessage = null;
     await cache.saveLastSelectedStation(station.id, station.name);
+    await _rememberRecentStation(station);
     notifyListeners();
     loadStationBoard(station.id);
   }
@@ -375,10 +390,30 @@ class AppState extends ChangeNotifier {
   final Map<int, DateTime> _stationBoardOpsCacheTime = {};
   final Map<int, Map<String, dynamic>> _stationBoardSchedCache = {};
   final Map<int, DateTime> _stationBoardSchedCacheTime = {};
+  final Map<String, Map<String, dynamic>> _stationBoardScheduleDayCache = {};
+  final Map<String, Future<void>> _stationBoardMoreInFlight = {};
+  int _stationBoardLoadGeneration = 0;
+
+  DateTime _boardItemDateTime(StationBoardItem item) {
+    return app_date.scheduleDateTime(
+            item.actualTime ?? item.plannedTime ?? item.time,
+            item.operatingDate) ??
+        DateTime.tryParse(item.operatingDate) ??
+        DateTime(2100);
+  }
+
+  void _sortBoardItems() {
+    stationDepartures
+        .sort((a, b) => _boardItemDateTime(a).compareTo(_boardItemDateTime(b)));
+    stationArrivals
+        .sort((a, b) => _boardItemDateTime(a).compareTo(_boardItemDateTime(b)));
+  }
 
   /// Load departures and arrivals for station board
   Future<void> loadStationBoard(int stationId) async {
+    final requestGeneration = ++_stationBoardLoadGeneration;
     isStationBoardLoading = true;
+    stationBoardCanLoadMore = true;
     stationBoardError = null;
     notifyListeners();
 
@@ -444,6 +479,10 @@ class AppState extends ChangeNotifier {
       if (futures.isNotEmpty) {
         await Future.wait(futures);
       }
+
+      // A different station was selected while this request was in flight.
+      // Ignore its response instead of replacing the current board.
+      if (requestGeneration != _stationBoardLoadGeneration) return;
 
       final rawTrains = opsResponse!['trains'] as List<dynamic>? ?? [];
       final rawSchedules = schedResponse!['routes'] as List<dynamic>? ?? [];
@@ -606,17 +645,158 @@ class AppState extends ChangeNotifier {
         }
       }
 
-      departures.sort((a, b) => a.time.compareTo(b.time));
-      arrivals.sort((a, b) => a.time.compareTo(b.time));
-
       stationDepartures = departures;
       stationArrivals = arrivals;
+      _sortBoardItems();
       stationBoardLastUpdated = DateTime.now();
     } catch (e) {
-      stationBoardError = 'Błąd podczas pobierania danych tablicy stacyjnej';
+      if (requestGeneration == _stationBoardLoadGeneration) {
+        stationBoardError = 'Błąd podczas pobierania danych tablicy stacyjnej';
+      }
       debugPrint('[AppState] loadStationBoard error: $e');
     } finally {
-      isStationBoardLoading = false;
+      if (requestGeneration == _stationBoardLoadGeneration) {
+        isStationBoardLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Lazily append one operating day of schedule data to the station board.
+  /// Operations are deliberately not fetched for tomorrow: they are real-time
+  /// data for the current day and would only increase API traffic.
+  Future<void> loadNextStationBoardDay() async {
+    final station = currentStation;
+    if (station == null || isStationBoardLoadingMore) return;
+    final latest = [...stationDepartures, ...stationArrivals]
+        .map(_boardItemDateTime)
+        .fold<DateTime?>(
+            null,
+            (latest, value) =>
+                latest == null || value.isAfter(latest) ? value : latest);
+    final date = DateTime(
+            latest?.year ?? DateTime.now().year,
+            latest?.month ?? DateTime.now().month,
+            latest?.day ?? DateTime.now().day)
+        .add(const Duration(days: 1));
+    final dateKey = app_date.formatDateForApi(date);
+    final cacheKey = '${station.id}/$dateKey';
+    final active = _stationBoardMoreInFlight[cacheKey];
+    if (active != null) return active;
+
+    final future = _loadNextStationBoardDay(station, date, cacheKey);
+    _stationBoardMoreInFlight[cacheKey] = future;
+    try {
+      await future;
+    } finally {
+      _stationBoardMoreInFlight.remove(cacheKey);
+    }
+  }
+
+  Future<void> _loadNextStationBoardDay(
+      Station station, DateTime date, String cacheKey) async {
+    isStationBoardLoadingMore = true;
+    notifyListeners();
+    try {
+      final response = _stationBoardScheduleDayCache[cacheKey] ??
+          await api.getSchedules(
+            dateFrom: app_date.formatDateForApi(date),
+            dateTo: app_date.formatDateForApi(date),
+            stations: station.id.toString(),
+            fullRoute: true,
+          );
+      _stationBoardScheduleDayCache[cacheKey] = response;
+      final routes = response['routes'] as List<dynamic>? ?? const [];
+      final departures = <StationBoardItem>[];
+      final arrivals = <StationBoardItem>[];
+      final knownDepartures = {
+        for (final item in stationDepartures)
+          '${item.scheduleId}/${item.orderId}/${item.operatingDate}/d'
+      };
+      final knownArrivals = {
+        for (final item in stationArrivals)
+          '${item.scheduleId}/${item.orderId}/${item.operatingDate}/a'
+      };
+      for (final rawRoute in routes.whereType<Map<String, dynamic>>()) {
+        final scheduleId = (rawRoute['scheduleId'] as num?)?.toInt() ?? 0;
+        final orderId = (rawRoute['orderId'] as num?)?.toInt() ?? 0;
+        final routeStations =
+            rawRoute['stations'] as List<dynamic>? ?? const [];
+        if (routeStations.isEmpty) continue;
+        final first = routeStations.first as Map<String, dynamic>;
+        final last = routeStations.last as Map<String, dynamic>;
+        final category = rawRoute['commercialCategorySymbol']?.toString() ?? '';
+        final carrierCode = rawRoute['carrierCode']?.toString() ?? '';
+        final carrier = carrierNames[carrierCode] ?? carrierCode;
+        final name = rawRoute['name']?.toString() ?? '';
+        for (final rawStop in routeStations.whereType<Map<String, dynamic>>()) {
+          if ((rawStop['stationId'] as num?)?.toInt() != station.id) continue;
+          StationBoardItem makeItem({required bool arrival}) {
+            final time =
+                (arrival ? rawStop['arrivalTime'] : rawStop['departureTime'])
+                    ?.toString();
+            final platform = (arrival
+                        ? rawStop['arrivalPlatform']
+                        : rawStop['departurePlatform'])
+                    ?.toString() ??
+                rawStop['platform']?.toString();
+            final track =
+                (arrival ? rawStop['arrivalTrack'] : rawStop['departureTrack'])
+                        ?.toString() ??
+                    rawStop['track']?.toString();
+            final number = (arrival
+                        ? rawStop['arrivalTrainNumber']
+                        : rawStop['departureTrainNumber'])
+                    ?.toString() ??
+                rawRoute['nationalNumber']?.toString() ??
+                '';
+            return StationBoardItem(
+              time: app_date.formatTimeSafe(time),
+              trainNumber: number,
+              trainName: name,
+              trainCategory: category,
+              carrier: carrier,
+              direction: getStationName(
+                  ((arrival ? first : last)['stationId'] as num?)?.toInt() ??
+                      0),
+              scheduleId: scheduleId,
+              orderId: orderId,
+              operatingDate: app_date.formatDateForApi(date),
+              platform: platform,
+              track: track,
+              plannedTime: app_date.formatTimeSafe(time),
+              raw: rawRoute,
+            );
+          }
+
+          if (rawStop['departureTime'] != null) {
+            final item = makeItem(arrival: false);
+            if (knownDepartures
+                .add('$scheduleId/$orderId/${item.operatingDate}/d')) {
+              departures.add(item);
+            }
+          }
+          if (rawStop['arrivalTime'] != null) {
+            final item = makeItem(arrival: true);
+            if (knownArrivals
+                .add('$scheduleId/$orderId/${item.operatingDate}/a')) {
+              arrivals.add(item);
+            }
+          }
+        }
+      }
+      if (currentStation?.id != station.id) return;
+      stationDepartures = [...stationDepartures, ...departures];
+      stationArrivals = [...stationArrivals, ...arrivals];
+      if (departures.isEmpty && arrivals.isEmpty) {
+        stationBoardCanLoadMore = false;
+      }
+      _sortBoardItems();
+      stationBoardLastUpdated = DateTime.now();
+    } catch (e) {
+      debugPrint('[AppState] loadNextStationBoardDay error: $e');
+    } finally {
+      isStationBoardLoadingMore = false;
       notifyListeners();
     }
   }

@@ -1,5 +1,13 @@
 ﻿# Historia zmian
 
+## 1.0.0-beta.5 — 2026-09-07
+
+- Tablica dociąga rozkład następnego dnia wyłącznie po wybraniu „Pokaż więcej”, zachowuje dane na ekranie i rozdziela dni separatorem „Jutro”.
+- Wybór stacji działa w dolnym panelu z lokalnym wyszukiwaniem, obsługą polskich znaków, ostatnio używanymi i ulubionymi stacjami.
+- Szczegóły utrudnienia pokazują wszystkie dotknięte pociągi porcjami po 20, z licznikiem postępu; jeśli źródło podaje czas utworzenia komunikatu, widoczna jest godzina „Dodano o”.
+- Stan pociągu jest oznaczony bezpośrednio na osi trasy: pulsuje tylko bieżący odcinek albo punkt stacji, także w trybie szacowanym.
+- Odpowiedzi tablicy dla wcześniej wybranej stacji nie zastępują już aktualnych danych.
+- 102 testy, w tym przejście przez północ, 96 pociągów w utrudnieniu i oznaczenie aktywnego odcinka trasy.
 ## 1.0.0-beta.4 — 2026-09-07
 
 - Połączenia są pierwszą zakładką i ekranem startowym aplikacji.

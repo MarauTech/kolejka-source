@@ -176,6 +176,14 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
     return message.length > 120 ? '${message.substring(0, 120)}…' : message;
   }
 
+  String? _creationTimeLabel(Disruption item) {
+    final dateTime = item.createdAt == null
+        ? null
+        : app_date.parsePdpDateTime(item.createdAt!);
+    if (dateTime == null) return null;
+    return app_date.formatTimeDisplay(dateTime.hour, dateTime.minute);
+  }
+
   void _showDetails(BuildContext context, Disruption item, AppState appState) {
     final theme = Theme.of(context);
     final typeName = _typeLabel(item);
@@ -189,116 +197,144 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.7,
-          minChildSize: 0.4,
-          maxChildSize: 0.95,
-          expand: false,
-          builder: (context, scrollController) {
-            return SingleChildScrollView(
-              controller: scrollController,
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 36,
-                      height: 4,
-                      margin: const EdgeInsets.only(bottom: 16),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.outlineVariant,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
+        var visibleTrainCount = 20;
+        return StatefulBuilder(builder: (context, setModalState) {
+          final totalTrainCount = item.affectedRoutes.length;
+          final visibleCount = visibleTrainCount.clamp(0, totalTrainCount);
+          return DraggableScrollableSheet(
+            initialChildSize: 0.7,
+            minChildSize: 0.4,
+            maxChildSize: 0.95,
+            expand: false,
+            builder: (context, scrollController) {
+              return SingleChildScrollView(
+                controller: scrollController,
+                padding: const EdgeInsets.all(20.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 16),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.warning_amber_rounded,
-                            color: Colors.orange, size: 28),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          typeName,
-                          style: const TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold),
+                          color: theme.colorScheme.outlineVariant,
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  if (startName.isNotEmpty || endName.isNotEmpty) ...[
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Row(
-                          children: [
-                            Icon(Icons.route_outlined,
-                                color: theme.colorScheme.primary),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                [
-                                  if (startName.isNotEmpty) startName,
-                                  if (endName.isNotEmpty) endName,
-                                ].join(' - '),
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.warning_amber_rounded,
+                              color: Colors.orange, size: 28),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            typeName,
+                            style: const TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    if (startName.isNotEmpty || endName.isNotEmpty) ...[
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            children: [
+                              Icon(Icons.route_outlined,
+                                  color: theme.colorScheme.primary),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  [
+                                    if (startName.isNotEmpty) startName,
+                                    if (endName.isNotEmpty) endName,
+                                  ].join(' - '),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14),
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
+                      const SizedBox(height: 16),
+                    ],
+                    const Text(
+                      'Treść komunikatu:',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                     ),
-                    const SizedBox(height: 16),
-                  ],
-                  const Text(
-                    'Treść komunikatu:',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _message(item),
-                    style: const TextStyle(fontSize: 14, height: 1.4),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Godzina dodania: źródło nie udostępnia tej informacji.',
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: theme.colorScheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 16),
-                  if (item.affectedRoutes.isNotEmpty) ...[
+                    const SizedBox(height: 6),
                     Text(
-                      'Dotknięte pociągi (${item.affectedRoutes.length}):',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 14),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: item.affectedRoutes
-                          .take(20)
-                          .map((r) =>
-                              _buildAffectedTrainChip(r, appState, theme))
-                          .toList(),
+                      _message(item),
+                      style: const TextStyle(fontSize: 14, height: 1.4),
                     ),
                     const SizedBox(height: 16),
+                    Text(
+                      _creationTimeLabel(item) == null
+                          ? 'Godzina dodania: źródło nie udostępnia tej informacji.'
+                          : 'Dodano o ${_creationTimeLabel(item)}',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 16),
+                    if (item.affectedRoutes.isNotEmpty) ...[
+                      Text(
+                        'Dotknięte pociągi ($totalTrainCount):',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: item.affectedRoutes
+                            .take(visibleCount)
+                            .map((r) =>
+                                _buildAffectedTrainChip(r, appState, theme))
+                            .toList(),
+                      ),
+                      const SizedBox(height: 12),
+                      Text('Wyświetlono $visibleCount z $totalTrainCount',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant)),
+                      if (visibleCount < totalTrainCount)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: TextButton.icon(
+                            key: const ValueKey('show-more-affected-trains'),
+                            onPressed: () => setModalState(() {
+                              visibleTrainCount = (visibleTrainCount + 20)
+                                  .clamp(0, totalTrainCount);
+                            }),
+                            icon: const Icon(Icons.expand_more),
+                            label: Text(
+                                'Pokaż kolejne (${totalTrainCount - visibleCount})'),
+                          ),
+                        ),
+                      const SizedBox(height: 16),
+                    ],
                   ],
-                ],
-              ),
-            );
-          },
-        );
+                ),
+              );
+            },
+          );
+        });
       },
     );
   }
@@ -520,6 +556,17 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
                             style: TextStyle(
                                 fontSize: 12,
                                 color: theme.colorScheme.onSurfaceVariant)),
+                      ),
+                    if (_creationTimeLabel(item) case final creationTime?)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          'Dodano o $creationTime',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
                       ),
                     Wrap(
                       spacing: 12,

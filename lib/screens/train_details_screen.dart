@@ -25,8 +25,11 @@ class TrainDetailsScreen extends StatefulWidget {
   State<TrainDetailsScreen> createState() => _TrainDetailsScreenState();
 }
 
-class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
+class _TrainDetailsScreenState extends State<TrainDetailsScreen>
+    with SingleTickerProviderStateMixin {
   Timer? _autoRefreshTimer;
+  late final AnimationController _positionPulse;
+  late final Animation<double> _positionPulseCurve;
   bool _isLoading = false;
   bool _routeLoadError = false;
   TrainOperation? _operation;
@@ -36,6 +39,11 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
   @override
   void initState() {
     super.initState();
+    _positionPulse = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1000))
+      ..repeat(reverse: true);
+    _positionPulseCurve =
+        CurvedAnimation(parent: _positionPulse, curve: Curves.easeInOut);
     final initialOperation = widget.result.operation;
     _operation = initialOperation != null &&
             operationMatchesRoute(
@@ -58,6 +66,7 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
   @override
   void dispose() {
     _autoRefreshTimer?.cancel();
+    _positionPulse.dispose();
     super.dispose();
   }
 
@@ -214,17 +223,6 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
 
     int currentDelay = positionResult.delayMinutes;
 
-    // Live position banner color logic
-    Color positionBannerColor = theme.colorScheme.primaryContainer;
-    Color positionTextColor = theme.colorScheme.onPrimaryContainer;
-    if (positionResult.source == PositionSource.estimatedWithDelay) {
-      positionBannerColor = Colors.orange.withValues(alpha: 0.2);
-      positionTextColor = Colors.orange.shade800;
-      if (theme.brightness == Brightness.dark) {
-        positionTextColor = Colors.orange.shade200;
-      }
-    }
-
     // Find the index of current/next station in the route list
     int currentActiveIndex = -1;
     if (positionResult.status == TrainStatusType.atStation &&
@@ -252,7 +250,6 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
     final category = widget.result.commercialCategory;
     final trainName = widget.result.trainName;
     final visibleStart = _showPreviousStations ? 0 : hiddenPassedCount;
-    final estimated = positionResult.source != PositionSource.live;
     String stationName(StationOnRoute station) =>
         appState.stationNames[station.stationId] ?? 'Stacja bez nazwy';
 
@@ -345,56 +342,6 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
                                           theme.colorScheme.onSurfaceVariant)),
                             ]),
                           ])),
-                  Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 12),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                          color: positionBannerColor,
-                          borderRadius: BorderRadius.circular(6)),
-                      child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(Icons.directions_train_outlined,
-                                size: 18, color: positionTextColor),
-                            const SizedBox(width: 8),
-                            Expanded(
-                                child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                  Text('Aktualny etap trasy',
-                                      style: TextStyle(
-                                          fontSize: 11,
-                                          color: positionTextColor)),
-                                  const SizedBox(height: 4),
-                                  Text(positionResult.description,
-                                      style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600,
-                                          color: positionTextColor)),
-                                  if (positionResult.previousStation != null &&
-                                      positionResult.nextStation != null)
-                                    Padding(
-                                        padding: const EdgeInsets.only(top: 4),
-                                        child: Text(
-                                            '${stationName(positionResult.previousStation!)} \u2192 ${stationName(positionResult.nextStation!)}',
-                                            style: TextStyle(
-                                                fontSize: 12,
-                                                color: positionTextColor))),
-                                  if (estimated &&
-                                      (positionResult.status ==
-                                              TrainStatusType.betweenStations ||
-                                          positionResult.status ==
-                                              TrainStatusType.atStation))
-                                    Padding(
-                                        padding: const EdgeInsets.only(top: 5),
-                                        child: Text(
-                                            'Pozycja szacowana wg rozkładu',
-                                            style: TextStyle(
-                                                fontSize: 11,
-                                                color: positionTextColor))),
-                                ])),
-                          ])),
                   Padding(
                       padding: const EdgeInsets.fromLTRB(16, 22, 16, 8),
                       child: Text(
@@ -425,6 +372,7 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
                       Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           child: TextButton.icon(
+                              key: const ValueKey('toggle-previous-stations'),
                               onPressed: () => setState(() =>
                                   _showPreviousStations =
                                       !_showPreviousStations),
@@ -463,16 +411,31 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen> {
                                   isPassed: index < currentActiveIndex,
                                   hasTrainNow: positionResult.status ==
                                           TrainStatusType.atStation &&
-                                      identical(positionResult.currentStation,
-                                          route.stations[index]),
+                                      positionResult
+                                              .currentStation?.stationId ==
+                                          route.stations[index].stationId,
                                   isBetweenNext: positionResult.status ==
                                           TrainStatusType.betweenStations &&
-                                      identical(positionResult.nextStation,
-                                          route.stations[index]),
+                                      positionResult.nextStation?.stationId ==
+                                          route.stations[index].stationId,
                                   isTrainAtPrevious: positionResult.status ==
                                           TrainStatusType.betweenStations &&
-                                      identical(positionResult.previousStation,
-                                          route.stations[index]),
+                                      positionResult
+                                              .previousStation?.stationId ==
+                                          route.stations[index].stationId,
+                                  pulseSegment: positionResult.status ==
+                                          TrainStatusType.betweenStations &&
+                                      positionResult
+                                              .previousStation?.stationId ==
+                                          route.stations[index].stationId,
+                                  pulseStation: positionResult.status ==
+                                          TrainStatusType.atStation &&
+                                      positionResult
+                                              .currentStation?.stationId ==
+                                          route.stations[index].stationId,
+                                  isEstimatedPosition: positionResult.source !=
+                                      PositionSource.live,
+                                  pulseAnimation: _positionPulseCurve,
                                   notice: routeStopNotice(
                                       route.stations[index],
                                       index > 0

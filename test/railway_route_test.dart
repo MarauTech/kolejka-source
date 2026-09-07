@@ -237,7 +237,8 @@ void main() {
                 theme: dark ? ThemeData.dark() : ThemeData.light(),
                 home: TrainDetailsScreen(
                     result: result, now: () => DateTime(2026, 9, 6, 10, 21)))));
-        await tester.pumpAndSettle();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 250));
         expect(state.requestedOperationId, 3);
         expect(state.requestedOperationDate, '2026-09-06');
         expect(find.text('MEHOFFER'), findsOneWidget);
@@ -250,7 +251,7 @@ void main() {
         final expand = find.text('Pokaż poprzednie stacje (10)');
         await tester.ensureVisible(expand);
         await tester.tap(expand);
-        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 250));
         expect(find.byType(RouteStopWidget), findsNWidgets(16));
         final animation =
             tester.widget<AnimatedSize>(find.byType(AnimatedSize));
@@ -263,11 +264,16 @@ void main() {
         expect(rows[1].startsVisibleRoute, isFalse);
         await tester.drag(
             find.byType(SingleChildScrollView), const Offset(0, -1400));
-        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 250));
         expect(tester.takeException(), isNull);
-        await tester.ensureVisible(find.text('Ukryj poprzednie stacje'));
-        await tester.tap(find.text('Ukryj poprzednie stacje'));
-        await tester.pumpAndSettle();
+        await tester.drag(
+            find.byType(SingleChildScrollView), const Offset(0, 1400));
+        await tester.pump(const Duration(milliseconds: 250));
+        final collapse =
+            find.byKey(const ValueKey('toggle-previous-stations'));
+        await tester.ensureVisible(collapse);
+        await tester.tap(collapse);
+        await tester.pump(const Duration(milliseconds: 250));
         expect(find.byType(RouteStopWidget), findsNWidgets(6));
         expect(tester.takeException(), isNull);
         expect(find.byType(ErrorWidget), findsNothing);

@@ -19,6 +19,10 @@ class RouteStopWidget extends StatelessWidget {
   final String operatingDate;
   final String? notice;
   final bool startsVisibleRoute;
+  final bool pulseSegment;
+  final bool pulseStation;
+  final bool isEstimatedPosition;
+  final Animation<double>? pulseAnimation;
 
   const RouteStopWidget(
       {super.key,
@@ -35,6 +39,10 @@ class RouteStopWidget extends StatelessWidget {
       this.operatingDate = '',
       this.notice,
       this.startsVisibleRoute = false,
+      this.pulseSegment = false,
+      this.pulseStation = false,
+      this.isEstimatedPosition = false,
+      this.pulseAnimation,
       required this.index});
 
   bool _hasTime(String? planned, String? actual) =>
@@ -166,36 +174,25 @@ class RouteStopWidget extends StatelessWidget {
                     if (showArrival) _time(true, theme),
                     if (showDeparture) _time(false, theme),
                   ]))),
-      SizedBox(
-          width: 20,
-          key: ValueKey('route-axis-$index'),
-          child: Stack(alignment: Alignment.topCenter, children: [
-            if (!isFirst && !startsVisibleRoute)
-              Positioned(
-                  top: 0,
-                  height: 21,
-                  child: Container(width: 1.5, color: topLine)),
-            if (!isLast)
-              Positioned(
-                  top: 21,
-                  bottom: 0,
-                  child: Container(width: 1.5, color: bottomLine)),
-            Positioned(
-                top: 21 - dotSize / 2,
-                child: Container(
-                    width: dotSize,
-                    height: dotSize,
-                    decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: active ? primary : theme.colorScheme.surface,
-                        border: Border.all(
-                            color: active
-                                ? primary
-                                : isPassed
-                                    ? pastLine
-                                    : normalLine,
-                            width: 1.5)))),
-          ])),
+      _RouteAxis(
+        key: ValueKey('route-axis-$index'),
+        isFirst: isFirst,
+        isLast: isLast,
+        startsVisibleRoute: startsVisibleRoute,
+        topLine: topLine,
+        bottomLine: bottomLine,
+        normalLine: normalLine,
+        pastLine: pastLine,
+        surface: theme.colorScheme.surface,
+        activeColor: primary,
+        active: active,
+        isPassed: isPassed,
+        dotSize: dotSize,
+        pulseSegment: pulseSegment,
+        pulseStation: pulseStation,
+        isEstimatedPosition: isEstimatedPosition,
+        animation: pulseAnimation,
+      ),
       Expanded(
           child: Container(
               padding: const EdgeInsets.only(top: 11, bottom: 12, left: 5),
@@ -245,6 +242,13 @@ class RouteStopWidget extends StatelessWidget {
                           padding: const EdgeInsets.only(top: 4),
                           child: Text('Pociąg na stacji',
                               style: TextStyle(fontSize: 11, color: primary))),
+                    if ((hasTrainNow || isBetweenNext) && isEstimatedPosition)
+                      Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text('Pozycja szacowana',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: theme.colorScheme.onSurfaceVariant))),
                     if (notice != null && notice!.trim().isNotEmpty)
                       Padding(
                           padding: const EdgeInsets.only(top: 8, right: 2),
@@ -269,5 +273,96 @@ class RouteStopWidget extends StatelessWidget {
                                   ]))),
                   ]))),
     ]));
+  }
+}
+
+/// Only this small axis fragment repaints while the current position pulses.
+class _RouteAxis extends StatelessWidget {
+  final bool isFirst;
+  final bool isLast;
+  final bool startsVisibleRoute;
+  final Color topLine;
+  final Color bottomLine;
+  final Color normalLine;
+  final Color pastLine;
+  final Color surface;
+  final Color activeColor;
+  final bool active;
+  final bool isPassed;
+  final double dotSize;
+  final bool pulseSegment;
+  final bool pulseStation;
+  final bool isEstimatedPosition;
+  final Animation<double>? animation;
+
+  const _RouteAxis({
+    super.key,
+    required this.isFirst,
+    required this.isLast,
+    required this.startsVisibleRoute,
+    required this.topLine,
+    required this.bottomLine,
+    required this.normalLine,
+    required this.pastLine,
+    required this.surface,
+    required this.activeColor,
+    required this.active,
+    required this.isPassed,
+    required this.dotSize,
+    required this.pulseSegment,
+    required this.pulseStation,
+    required this.isEstimatedPosition,
+    required this.animation,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final shouldPulse = (pulseSegment || pulseStation) && animation != null;
+    final positionColor =
+        isEstimatedPosition ? Colors.amber.shade700 : Colors.green;
+    Widget axis(double opacity) {
+      final pulseColor = positionColor.withValues(alpha: .45 + .45 * opacity);
+      final lineColor = pulseSegment ? pulseColor : bottomLine;
+      final dotColor = pulseStation
+          ? pulseColor
+          : active
+              ? activeColor
+              : surface;
+      return SizedBox(
+          width: 20,
+          child: Stack(alignment: Alignment.topCenter, children: [
+            if (!isFirst && !startsVisibleRoute)
+              Positioned(
+                  top: 0,
+                  height: 21,
+                  child: Container(width: 1.5, color: topLine)),
+            if (!isLast)
+              Positioned(
+                  top: 21,
+                  bottom: 0,
+                  child: Container(width: 1.5, color: lineColor)),
+            Positioned(
+                top: 21 - dotSize / 2,
+                child: Container(
+                    width: dotSize,
+                    height: dotSize,
+                    decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: dotColor,
+                        border: Border.all(
+                            color: active || pulseStation
+                                ? dotColor
+                                : isPassed
+                                    ? pastLine
+                                    : normalLine,
+                            width: 1.5)))),
+          ]));
+    }
+
+    if (!shouldPulse) return axis(0);
+    return AnimatedBuilder(
+      animation: animation!,
+      builder: (context, _) => axis(animation!.value),
+    );
   }
 }

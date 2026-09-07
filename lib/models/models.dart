@@ -399,6 +399,9 @@ class Disruption {
   final int? startStationId;
   final int? endStationId;
   final String? message;
+  /// Creation time supplied for this individual alert, when the feed has it.
+  /// This deliberately does not use the top-level `generatedAt` snapshot time.
+  final String? createdAt;
   final List<Map<String, dynamic>> affectedRoutes;
   final Map<String, dynamic> raw;
 
@@ -408,6 +411,7 @@ class Disruption {
     this.startStationId,
     this.endStationId,
     this.message,
+    this.createdAt,
     required this.affectedRoutes,
     required this.raw,
   });
@@ -430,9 +434,20 @@ class Disruption {
       startStationId: json['startStationId'] as int?,
       endStationId: json['endStationId'] as int?,
       message: json['message'] as String?,
+      createdAt: _timestampValue(json['createdAt'] ??
+          json['creationTime'] ??
+          json['creationDate'] ??
+          json['created'] ??
+          json['addDate']),
       affectedRoutes: affected,
       raw: json,
     );
+  }
+
+  static String? _timestampValue(Object? value) {
+    if (value is DateTime) return value.toIso8601String();
+    final text = value?.toString().trim();
+    return text == null || text.isEmpty ? null : text;
   }
 
   Map<String, dynamic> toJson() => raw;

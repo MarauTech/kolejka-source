@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../app_state.dart';
@@ -5,7 +6,7 @@ import '../models/models.dart';
 import '../utils/category_utils.dart';
 import '../utils/format_utils.dart';
 import '../utils/date_utils.dart' as app_date;
-import '../widgets/station_search.dart';
+import '../utils/search_utils.dart';
 import '../widgets/train_type_icon.dart';
 import 'train_details_screen.dart';
 
@@ -20,7 +21,6 @@ class _StationScreenState extends State<StationScreen>
     with SingleTickerProviderStateMixin {
   static const int _boardPageSize = 8;
   late TabController _tabController;
-  bool _isSelectingStation = false;
   bool _showPreviousDepartures = false;
   bool _showPreviousArrivals = false;
   int _visibleDepartureCount = _boardPageSize;
@@ -30,13 +30,151 @@ class _StationScreenState extends State<StationScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(
+        length: 2,
+        vsync: this,
+        animationDuration: const Duration(milliseconds: 200));
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _openStationPicker(AppState appState) async {
+    final controller = TextEditingController();
+    var query = '';
+    var filteredQuery = '';
+    Timer? debounce;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final normalized = normalizeStationQuery(filteredQuery);
+          final results = normalized.isEmpty
+              ? const <Station>[]
+              : appState.stations
+                  .where((station) =>
+                      normalizeStationQuery(station.name).contains(normalized))
+                  .take(20)
+                  .toList();
+          final favoriteStations = appState.favoriteStations
+              .map((favorite) => Station(id: favorite.id, name: favorite.name))
+              .toList();
+
+          Widget stationTile(Station station, {String? subtitle}) => ListTile(
+                dense: true,
+                leading: Icon(Icons.location_on_outlined,
+                    color: Theme.of(context).colorScheme.primary),
+                title: Text(station.name,
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: subtitle == null ? null : Text(subtitle),
+                onTap: () {
+                  appState.selectManualStation(station);
+                  Navigator.pop(sheetContext);
+                },
+              );
+          Widget section(String title, List<Station> stations,
+              {String? subtitle}) {
+            if (stations.isEmpty) return const SizedBox.shrink();
+            return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+                      child: Text(title,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelLarge
+                              ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                  fontWeight: FontWeight.w700))),
+                  ...stations.map(
+                      (station) => stationTile(station, subtitle: subtitle)),
+                ]);
+          }
+
+          return SafeArea(
+            top: false,
+            child: SizedBox(
+              height: MediaQuery.sizeOf(context).height * .78,
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                        child: Text('Wybierz stację',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(fontWeight: FontWeight.bold))),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: TextField(
+                        controller: controller,
+                        autofocus: true,
+                        decoration: InputDecoration(
+                          hintText: 'Wyszukaj stację',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: query.isEmpty
+                              ? null
+                              : IconButton(
+                                  tooltip: 'Wyczyść',
+                                  onPressed: () {
+                                    controller.clear();
+                                    debounce?.cancel();
+                                    setSheetState(() {
+                                      query = '';
+                                      filteredQuery = '';
+                                    });
+                                  },
+                                  icon: const Icon(Icons.clear)),
+                          border: const OutlineInputBorder(),
+                        ),
+                        onChanged: (value) {
+                          setSheetState(() => query = value);
+                          debounce?.cancel();
+                          debounce =
+                              Timer(const Duration(milliseconds: 250), () {
+                            if (sheetContext.mounted) {
+                              setSheetState(() => filteredQuery = value);
+                            }
+                          });
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView(children: [
+                        if (normalized.isEmpty) ...[
+                          if (appState.isStationFromGps &&
+                              appState.currentStation != null)
+                            section(
+                                'Najbliższa stacja', [appState.currentStation!],
+                                subtitle: 'Ustalona na podstawie GPS'),
+                          section('Ostatnio używane', appState.recentStations),
+                          section('Ulubione', favoriteStations),
+                        ] else ...[
+                          section('Wyniki wyszukiwania', results),
+                          if (results.isEmpty)
+                            const Padding(
+                                padding: EdgeInsets.all(24),
+                                child: Text('Nie znaleziono stacji')),
+                        ],
+                      ]),
+                    ),
+                  ]),
+            ),
+          );
+        },
+      ),
+    );
+    debounce?.cancel();
+    controller.dispose();
   }
 
   String? _formatPlatformTrack(String? platform, String? track) {
@@ -160,6 +298,23 @@ class _StationScreenState extends State<StationScreen>
     return effective != null && now.difference(effective).inMinutes > 5;
   }
 
+  DateTime _itemDateTime(StationBoardItem item) {
+    return app_date.scheduleDateTime(
+            item.actualTime ?? item.plannedTime ?? item.time,
+            item.operatingDate) ??
+        DateTime.tryParse(item.operatingDate) ??
+        DateTime(2100);
+  }
+
+  String _nextDayLabel(DateTime date, DateTime today) {
+    final day = DateTime(date.year, date.month, date.day);
+    final tomorrow = DateTime(today.year, today.month, today.day)
+        .add(const Duration(days: 1));
+    return day == tomorrow
+        ? 'Jutro · ${app_date.formatDateDisplay(day)}'
+        : app_date.formatDateDisplay(day);
+  }
+
   String _boardDateLabel(List<StationBoardItem> items, DateTime now) {
     DateTime date = now;
     if (items.isNotEmpty) {
@@ -261,158 +416,133 @@ class _StationScreenState extends State<StationScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (_isSelectingStation) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: StationSearchField(
-                    label: 'Zmień stację',
-                    stations: appState.stations,
-                    selectedStation: station,
-                    onStationSelected: (newStation) {
-                      if (newStation != null) {
-                        appState.selectManualStation(newStation);
-                      }
-                      setState(() => _isSelectingStation = false);
-                    },
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => setState(() => _isSelectingStation = false),
-                ),
-              ],
-            ),
-          ] else ...[
-            Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: () => setState(() => _isSelectingStation = true),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () => _openStationPicker(appState),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                station?.name ?? 'Wybierz stację',
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Icon(
+                              Icons.edit_outlined,
+                              size: 18,
+                              color: theme.colorScheme.outline,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            if (appState.isDetectingLocation ||
+                                (appState.isLoading && station == null)) ...[
+                              const SizedBox(
+                                width: 12,
+                                height: 12,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 1.5),
+                              ),
+                              const SizedBox(width: 6),
                               Flexible(
                                 child: Text(
-                                  station?.name ?? 'Wybierz stację',
-                                  style: theme.textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
+                                  'Ustalanie stacji na podstawie GPS...',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: theme.colorScheme.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ] else if (appState.isStationFromGps) ...[
+                              Icon(
+                                Icons.near_me,
+                                size: 13,
+                                color: theme.colorScheme.primary,
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  'Najbliższa stacja (GPS)$updatedText',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: theme.colorScheme.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ] else ...[
+                              Flexible(
+                                child: Text(
+                                  'Wybrana$updatedText',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: theme.colorScheme.onSurfaceVariant,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              const SizedBox(width: 6),
-                              Icon(
-                                Icons.edit_outlined,
-                                size: 18,
-                                color: theme.colorScheme.outline,
-                              ),
                             ],
-                          ),
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              if (appState.isDetectingLocation ||
-                                  (appState.isLoading && station == null)) ...[
-                                const SizedBox(
-                                  width: 12,
-                                  height: 12,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 1.5),
-                                ),
-                                const SizedBox(width: 6),
-                                Flexible(
-                                  child: Text(
-                                    'Ustalanie stacji na podstawie GPS...',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: theme.colorScheme.primary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ] else if (appState.isStationFromGps) ...[
-                                Icon(
-                                  Icons.near_me,
-                                  size: 13,
-                                  color: theme.colorScheme.primary,
-                                ),
-                                const SizedBox(width: 4),
-                                Flexible(
-                                  child: Text(
-                                    'Najbliższa stacja (GPS)$updatedText',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: theme.colorScheme.primary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ] else ...[
-                                Flexible(
-                                  child: Text(
-                                    'Wybrana$updatedText',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                // Star favorite toggle
-                if (station != null)
-                  IconButton(
-                    icon: Icon(
-                      isFavorite ? Icons.star : Icons.star_border,
-                      color:
-                          isFavorite ? Colors.amber : theme.colorScheme.outline,
-                    ),
-                    onPressed: () => appState.toggleFavoriteStation(station),
-                    tooltip: isFavorite
-                        ? 'Usuń z ulubionych'
-                        : 'Dodaj do ulubionych',
-                  ),
-                // GPS button
-                IconButton(
-                  icon: appState.isDetectingLocation
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(
-                          Icons.my_location,
-                          color: appState.isStationFromGps
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.outline,
+                          ],
                         ),
-                  onPressed: appState.isDetectingLocation
-                      ? null
-                      : () => appState.detectNearestStation(forceRefresh: true),
-                  tooltip: 'Wykryj najbliższą stację',
+                      ],
+                    ),
+                  ),
                 ),
-              ],
-            ),
-          ],
+              ),
+              // Star favorite toggle
+              if (station != null)
+                IconButton(
+                  icon: Icon(
+                    isFavorite ? Icons.star : Icons.star_border,
+                    color:
+                        isFavorite ? Colors.amber : theme.colorScheme.outline,
+                  ),
+                  onPressed: () => appState.toggleFavoriteStation(station),
+                  tooltip:
+                      isFavorite ? 'Usuń z ulubionych' : 'Dodaj do ulubionych',
+                ),
+              // GPS button
+              IconButton(
+                icon: appState.isDetectingLocation
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        Icons.my_location,
+                        color: appState.isStationFromGps
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.outline,
+                      ),
+                onPressed: appState.isDetectingLocation
+                    ? null
+                    : () => appState.detectNearestStation(forceRefresh: true),
+                tooltip: 'Wykryj najbliższą stację',
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -490,10 +620,12 @@ class _StationScreenState extends State<StationScreen>
     }
 
     final now = DateTime.now();
+    final sortedItems = [...items]
+      ..sort((a, b) => _itemDateTime(a).compareTo(_itemDateTime(b)));
     final pastItems = <StationBoardItem>[];
     final upcomingItems = <StationBoardItem>[];
 
-    for (final item in items) {
+    for (final item in sortedItems) {
       if (_isItemPast(item, now)) {
         pastItems.add(item);
       } else {
@@ -513,7 +645,7 @@ class _StationScreenState extends State<StationScreen>
         padding: const EdgeInsets.fromLTRB(14, 7, 14, 6),
         color: theme.colorScheme.surfaceContainerLow,
         child: Text(
-          _boardDateLabel(items, now),
+          _boardDateLabel(sortedItems, now),
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w600,
@@ -547,8 +679,15 @@ class _StationScreenState extends State<StationScreen>
       ));
     }
 
+    DateTime? previousDate;
     void addRows(List<StationBoardItem> rows, {required bool past}) {
       for (final item in rows) {
+        final date = _itemDateTime(item);
+        final day = DateTime(date.year, date.month, date.day);
+        if (previousDate != null && previousDate != day) {
+          children.add(_buildSectionDivider(_nextDayLabel(day, now), theme));
+        }
+        previousDate = day;
         children.add(_buildRow(item, isArrival, past, theme, appState));
         children.add(Divider(
           height: 1,
@@ -568,33 +707,48 @@ class _StationScreenState extends State<StationScreen>
     }
     addRows(visibleUpcoming, past: false);
 
-    if (remaining > 0) {
+    if (remaining > 0 || appState.stationBoardCanLoadMore) {
       children.add(_buildBoardAction(
         key:
             ValueKey(isArrival ? 'show-more-arrivals' : 'show-more-departures'),
-        label: isArrival
-            ? 'Pokaż kolejne przyjazdy ($remaining)'
-            : 'Pokaż kolejne odjazdy ($remaining)',
-        icon: Icons.expand_more,
-        onTap: () => setState(() {
-          if (isArrival) {
-            _visibleArrivalCount += _boardPageSize;
-          } else {
-            _visibleDepartureCount += _boardPageSize;
-          }
-        }),
+        label: appState.isStationBoardLoadingMore
+            ? 'Ładowanie kolejnych odjazdów...'
+            : remaining > 0
+                ? isArrival
+                    ? 'Pokaż kolejne przyjazdy ($remaining)'
+                    : 'Pokaż kolejne odjazdy ($remaining)'
+                : 'Pokaż więcej',
+        icon: appState.isStationBoardLoadingMore
+            ? Icons.hourglass_top
+            : Icons.expand_more,
+        onTap: appState.isStationBoardLoadingMore
+            ? () {}
+            : () {
+                if (remaining > 0) {
+                  setState(() {
+                    if (isArrival) {
+                      _visibleArrivalCount += _boardPageSize;
+                    } else {
+                      _visibleDepartureCount += _boardPageSize;
+                    }
+                  });
+                } else {
+                  appState.loadNextStationBoardDay();
+                }
+              },
         theme: theme,
       ));
     }
 
     return RefreshIndicator(
       onRefresh: () => appState.loadStationBoard(appState.currentStation!.id),
-      child: ListView(
+      child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).padding.bottom + 80,
         ),
-        children: children,
+        itemCount: children.length,
+        itemBuilder: (context, index) => children[index],
       ),
     );
   }

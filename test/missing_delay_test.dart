@@ -101,7 +101,8 @@ void main() {
           child: MaterialApp(
               home: TrainDetailsScreen(
                   result: result, now: () => DateTime(2026, 9, 6, 10, 19)))));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
       for (final value in ['10:18', '11:18']) {
         expect(
             tester

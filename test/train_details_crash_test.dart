@@ -28,21 +28,28 @@ void main() {
                 theme: ThemeData.dark(),
                 home: TrainDetailsScreen(
                     result: result, now: () => DateTime(2026, 9, 6, 10, 21)))));
-        await tester.pumpAndSettle();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 250));
         expect(tester.takeException(), isNull);
         expect(find.byType(ErrorWidget), findsNothing);
-        expect(find.text('W drodze do: Stacja 1011'), findsOneWidget);
+        expect(find.text('Aktualny etap trasy'), findsNothing);
         expect(find.byType(RouteStopWidget), findsNWidgets(6));
+        final visibleRows = tester
+            .widgetList<RouteStopWidget>(find.byType(RouteStopWidget))
+            .toList();
+        expect(visibleRows.where((row) => row.pulseSegment), hasLength(1));
+        expect(visibleRows.where((row) => row.pulseStation), isEmpty);
         final expand = find.text('Pokaż poprzednie stacje (10)');
         expect(expand, findsOneWidget);
         await tester.ensureVisible(expand);
         await tester.tap(expand);
-        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 250));
         expect(find.byType(RouteStopWidget), findsNWidgets(16));
         expect(find.text('Per. IV / Tor 3'), findsWidgets);
         await tester.drag(
             find.byType(SingleChildScrollView), const Offset(0, -1800));
-        await tester.pumpAndSettle();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 250));
         expect(tester.takeException(), isNull);
         expect(find.byType(ErrorWidget), findsNothing);
         await tester.pumpWidget(const SizedBox());
@@ -61,7 +68,8 @@ void main() {
               home: TrainDetailsScreen(
                   result: connectionFixture(noPosition: true),
                   now: () => DateTime(2026, 9, 6, 10, 21)))));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
       expect(find.byType(RouteStopWidget), findsNWidgets(16));
       expect(find.textContaining('Pokaż poprzednie'), findsNothing);
       expect(tester.takeException(), isNull);
@@ -70,4 +78,30 @@ void main() {
       state.dispose();
     });
   }
+
+  testWidgets('Only the current station point pulses while the train waits',
+      (tester) async {
+    final result = connectionFixture();
+    final state = FixtureState()..updatedOperation = result.operation;
+    state.stationNames = {
+      for (final stop in result.route.stations)
+        stop.stationId: 'Stacja ${stop.stationId}'
+    };
+    await tester.pumpWidget(ChangeNotifierProvider<AppState>.value(
+        value: state,
+        child: MaterialApp(
+            home: TrainDetailsScreen(
+                result: result, now: () => DateTime(2026, 9, 6, 10, 22, 15)))));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    final rows = tester
+        .widgetList<RouteStopWidget>(find.byType(RouteStopWidget))
+        .toList();
+    expect(rows.where((row) => row.pulseSegment), isEmpty);
+    expect(rows.where((row) => row.pulseStation), hasLength(1));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    state.dispose();
+  });
 }

@@ -18,6 +18,7 @@ class CacheService {
   static const _nearestStationTsKey = 'cache_nearest_station_ts';
   static const _favoriteStationsKey = 'cache_favorite_stations';
   static const _favoriteRoutesKey = 'cache_favorite_routes';
+  static const _recentStationsKey = 'cache_recent_stations';
   static const _themeModeKey = 'cache_theme_mode';
   static const _trainIndexPrefix = 'cache_train_index_';
 
@@ -29,9 +30,11 @@ class CacheService {
   static const nearestStationCacheDuration = Duration(minutes: 30);
 
   late SharedPreferences _prefs;
+  bool _isInitialized = false;
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
+    _isInitialized = true;
   }
 
   // === Generic cache methods ===
@@ -177,6 +180,24 @@ class CacheService {
     try {
       final list = jsonDecode(raw) as List<dynamic>?;
       return list?.cast<Map<String, dynamic>>() ?? [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> saveRecentStations(List<Map<String, dynamic>> stations) async {
+    if (!_isInitialized) return;
+    await _prefs.setString(_recentStationsKey, jsonEncode(stations));
+  }
+
+  List<Map<String, dynamic>> loadRecentStations() {
+    if (!_isInitialized) return [];
+    final raw = _prefs.getString(_recentStationsKey);
+    if (raw == null) return [];
+    try {
+      return (jsonDecode(raw) as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
     } catch (_) {
       return [];
     }

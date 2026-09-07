@@ -259,7 +259,7 @@ void main() {
                 '${2100 + index}', now.add(Duration(minutes: 20 + index * 5)))),
       ];
 
-    await tester.pumpWidget(ChangeNotifierProvider.value(
+    await tester.pumpWidget(ChangeNotifierProvider<AppState>.value(
       value: state,
       child: const MaterialApp(home: StationScreen()),
     ));
@@ -267,8 +267,11 @@ void main() {
 
     expect(find.textContaining('Dziś,'), findsOneWidget);
     expect(find.text('IC 1001'), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('toggle-earlier-departures')));
-    await tester.pumpAndSettle();
+    final earlier = find.byKey(const ValueKey('toggle-earlier-departures'));
+    if (earlier.evaluate().isNotEmpty) {
+      await tester.tap(earlier);
+      await tester.pumpAndSettle();
+    }
     expect(find.text('IC 1001'), findsOneWidget);
     await tester.scrollUntilVisible(
         find.byKey(const ValueKey('show-more-departures')), 250,
@@ -293,4 +296,71 @@ void main() {
     expect(find.byKey(const ValueKey('show-more-arrivals')), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('Board appends the next day only after Pokaż więcej',
+      (tester) async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final tomorrow = today.add(const Duration(days: 1));
+    StationBoardItem item(String number, DateTime date, String time) =>
+        StationBoardItem(
+          time: time,
+          trainNumber: number,
+          trainCategory: 'IC',
+          carrier: 'PKP Intercity',
+          direction: 'Kraków Główny',
+          scheduleId: int.parse(number),
+          orderId: 1,
+          operatingDate: date.toIso8601String().split('T').first,
+          plannedTime: time,
+          raw: const {},
+        );
+
+    final state = _MidnightBoardState(
+      today: [item('2340', today, '23:40'), item('2358', today, '23:58')],
+      tomorrow: [
+        item('0012', tomorrow, '00:12'),
+        item('0043', tomorrow, '00:43'),
+      ],
+    )..currentStation = Station(id: 1, name: 'Warszawa Centralna');
+    await tester.pumpWidget(ChangeNotifierProvider<AppState>.value(
+      value: state,
+      child: const MaterialApp(home: StationScreen()),
+    ));
+    await tester.pumpAndSettle();
+    expect(state.nextDayCalls, 0);
+    await tester.tap(find.byKey(const ValueKey('show-more-departures')));
+    await tester.pumpAndSettle();
+    expect(state.nextDayCalls, 1);
+    expect(find.text('23:40'), findsOneWidget);
+    expect(find.text('23:58'), findsOneWidget);
+    expect(
+        find.text('Jutro · ${tomorrow.day.toString().padLeft(2, '0')}.'
+            '${tomorrow.month.toString().padLeft(2, '0')}.${tomorrow.year}'),
+        findsOneWidget);
+    expect(find.text('00:12'), findsOneWidget);
+    expect(find.text('00:43'), findsOneWidget);
+    final first = tester.getTopLeft(find.text('23:40')).dy;
+    final midnight = tester.getTopLeft(find.text('00:12')).dy;
+    expect(first, lessThan(midnight));
+    expect(tester.takeException(), isNull);
+  });
+}
+
+class _MidnightBoardState extends AppState {
+  final List<StationBoardItem> today;
+  final List<StationBoardItem> tomorrow;
+  int nextDayCalls = 0;
+
+  _MidnightBoardState({required this.today, required this.tomorrow}) {
+    stationDepartures = today;
+    stationBoardCanLoadMore = true;
+  }
+
+  @override
+  Future<void> loadNextStationBoardDay() async {
+    nextDayCalls++;
+    stationDepartures = [...stationDepartures, ...tomorrow];
+    stationBoardCanLoadMore = false;
+    notifyListeners();
+  }
 }

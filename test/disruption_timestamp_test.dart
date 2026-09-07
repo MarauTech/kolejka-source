@@ -10,6 +10,7 @@ class TimestampFixture extends FixtureState {
   String? generatedAt = '2026-09-07T15:01:48Z';
   bool shortenedTimestamp = false;
   bool timestampAsDateTime = false;
+  String? createdAt;
   @override
   Future<Map<String, dynamic>> getDisruptions() async => {
         if (shortenedTimestamp)
@@ -21,7 +22,11 @@ class TimestampFixture extends FixtureState {
               ? DateTime.parse(generatedAt!)
               : generatedAt,
         'disruptions': [
-          {'disruptionId': 1, 'message': 'Awaria sieci trakcyjnej'}
+          {
+            'disruptionId': 1,
+            'message': 'Awaria sieci trakcyjnej',
+            if (createdAt != null) 'createdAt': createdAt,
+          }
         ]
       };
 }
@@ -56,6 +61,19 @@ void main() {
     expect(find.text('Godzina dodania: źródło nie udostępnia tej informacji.'),
         findsOneWidget);
     expect(tester.takeException(), isNull);
+    Navigator.of(tester.element(find.text('Treść komunikatu:'))).pop();
+    await tester.pumpAndSettle();
+    state.generatedAt = '2026-09-07T15:01:48Z';
+    state.createdAt = '2026-09-07T13:42:00Z';
+    await tester.tap(find.byTooltip('Odśwież'));
+    await tester.pumpAndSettle();
+    final createdLocal = DateTime.parse(state.createdAt!).toLocal();
+    final createdLabel =
+        app_date.formatTimeDisplay(createdLocal.hour, createdLocal.minute);
+    expect(find.text('Dodano o $createdLabel'), findsOneWidget);
+    await tester.tap(find.text('Awaria sieci trakcyjnej'));
+    await tester.pumpAndSettle();
+    expect(find.text('Dodano o $createdLabel'), findsNWidgets(2));
     Navigator.of(tester.element(find.text('Treść komunikatu:'))).pop();
     await tester.pumpAndSettle();
     state.shortenedTimestamp = true;
