@@ -128,6 +128,45 @@ String calculateTravelTimeFromDateTime(String? departure, String? arrival) {
   }
 }
 
+String formatDuration(Duration duration) {
+  if (duration.isNegative) return '';
+  final hours = duration.inHours;
+  final minutes = duration.inMinutes.remainder(60);
+  return hours > 0 ? '$hours h $minutes min' : '$minutes min';
+}
+
+/// Duration based on the same effective times that are displayed in results.
+String effectiveTravelTime({
+  required String plannedDeparture,
+  required String plannedArrival,
+  String? actualDeparture,
+  String? actualArrival,
+  required int departureDelay,
+  required int arrivalDelay,
+  required String operatingDate,
+  int? departureDay,
+  int? arrivalDay,
+}) {
+  DateTime? effective(String planned, String? actual, int delay, int? day) {
+    final observed = parsePdpDateTime(actual);
+    if (observed != null) return observed;
+    final scheduled = scheduleDateTime(planned, operatingDate, day: day);
+    return scheduled?.add(Duration(minutes: delay));
+  }
+
+  final departure = effective(
+      plannedDeparture, actualDeparture, departureDelay, departureDay);
+  var arrival =
+      effective(plannedArrival, actualArrival, arrivalDelay, arrivalDay);
+  if (departure == null || arrival == null) return '';
+  if (arrival.isBefore(departure) &&
+      !plannedDeparture.contains('T') &&
+      !plannedArrival.contains('T')) {
+    arrival = arrival.add(const Duration(days: 1));
+  }
+  return formatDuration(arrival.difference(departure));
+}
+
 int? _timeSpanToMinutes(String timeSpan) {
   try {
     final parts = timeSpan.split(':');
@@ -149,7 +188,8 @@ int? _timeSpanToMinutes(String timeSpan) {
 
 /// Format delay in minutes with text description (No emoji)
 String formatDelay(int? delayMinutes) {
-  if (delayMinutes == null || delayMinutes == 0) return 'Planowo';
+  if (delayMinutes == null) return 'Wg rozkładu';
+  if (delayMinutes == 0) return 'Planowo';
   if (delayMinutes > 0) return '+$delayMinutes min';
   return '$delayMinutes min';
 }

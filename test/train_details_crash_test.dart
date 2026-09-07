@@ -39,7 +39,7 @@ void main() {
         await tester.tap(expand);
         await tester.pumpAndSettle();
         expect(find.byType(RouteStopWidget), findsNWidgets(16));
-        expect(find.text('Per. IV/3'), findsWidgets);
+        expect(find.text('Per. IV / Tor 3'), findsWidgets);
         await tester.drag(
             find.byType(SingleChildScrollView), const Offset(0, -1800));
         await tester.pumpAndSettle();

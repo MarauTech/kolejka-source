@@ -111,7 +111,18 @@ class _StationScreenState extends State<StationScreen>
       );
     }
 
-    if (delay == null || delay == 0) {
+    if (delay == null) {
+      return Text(
+        'Wg rozkładu',
+        style: TextStyle(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
+        ),
+      );
+    }
+
+    if (delay == 0) {
       return const Text(
         'Planowo',
         style: TextStyle(
@@ -149,6 +160,10 @@ class _StationScreenState extends State<StationScreen>
     final station = appState.currentStation;
     final isFavorite =
         station != null && appState.isStationFavorite(station.id);
+    final updated = appState.stationBoardLastUpdated;
+    final updatedText = updated == null
+        ? ''
+        : ' · Aktualizacja ${updated.hour.toString().padLeft(2, '0')}:${updated.minute.toString().padLeft(2, '0')}';
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -251,22 +266,20 @@ class _StationScreenState extends State<StationScreen>
                                 const SizedBox(width: 4),
                                 Flexible(
                                   child: Text(
-                                    'Najbliższa stacja (GPS)'
-                                    '${appState.stationBoardLastUpdated != null ? ' | Zaktualizowano: ${appState.stationBoardLastUpdated!.hour.toString().padLeft(2, '0')}:${appState.stationBoardLastUpdated!.minute.toString().padLeft(2, '0')}:${appState.stationBoardLastUpdated!.second.toString().padLeft(2, '0')}' : ''}',
+                                    'Najbliższa stacja (GPS)$updatedText',
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: theme.colorScheme.primary,
                                       fontWeight: FontWeight.w600,
                                     ),
-                                    maxLines: 1,
+                                    maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                               ] else ...[
                                 Flexible(
                                   child: Text(
-                                    'Wybrana stacja'
-                                    '${appState.stationBoardLastUpdated != null ? ' | Zaktualizowano: ${appState.stationBoardLastUpdated!.hour.toString().padLeft(2, '0')}:${appState.stationBoardLastUpdated!.minute.toString().padLeft(2, '0')}:${appState.stationBoardLastUpdated!.second.toString().padLeft(2, '0')}' : ''}',
+                                    'Wybrana$updatedText',
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: theme.colorScheme.onSurfaceVariant,

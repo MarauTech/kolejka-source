@@ -144,7 +144,7 @@ void main() {
       expect(find.textContaining('1 przesiadka'), findsOneWidget);
       expect(find.text('Per. II / Tor 7'), findsOneWidget);
       expect(find.text('Per. IV / Tor 3'), findsOneWidget);
-      expect(find.textContaining('3 h 10 min'), findsOneWidget);
+      expect(find.textContaining('Przewidywany: 3 h 5 min'), findsOneWidget);
       expect(tester.widget<Text>(find.text('10:05')).style?.color, Colors.red);
       expect(tester.widget<Text>(find.text('10:00')).style?.decoration,
           TextDecoration.lineThrough);

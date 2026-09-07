@@ -6,8 +6,9 @@ import 'search_screen.dart';
 
 class FavoritesScreen extends StatefulWidget {
   final ValueChanged<int>? onNavigateToTab;
+  final ValueChanged<FavoriteRoute>? onOpenRoute;
 
-  const FavoritesScreen({super.key, this.onNavigateToTab});
+  const FavoritesScreen({super.key, this.onNavigateToTab, this.onOpenRoute});
 
   @override
   State<FavoritesScreen> createState() => _FavoritesScreenState();
@@ -43,6 +44,10 @@ class _FavoritesScreenState extends State<FavoritesScreen>
   }
 
   void _openRoute(AppState appState, FavoriteRoute favRoute) {
+    if (widget.onOpenRoute != null) {
+      widget.onOpenRoute!(favRoute);
+      return;
+    }
     final fromSt = appState.stations.firstWhere(
       (s) => s.id == favRoute.fromStationId,
       orElse: () =>
@@ -80,26 +85,8 @@ class _FavoritesScreenState extends State<FavoritesScreen>
           labelColor: theme.colorScheme.primary,
           unselectedLabelColor: theme.colorScheme.outline,
           tabs: [
-            Tab(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.location_on_outlined, size: 18),
-                  const SizedBox(width: 8),
-                  Text('Stacje (${appState.favoriteStations.length})'),
-                ],
-              ),
-            ),
-            Tab(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.route_outlined, size: 18),
-                  const SizedBox(width: 8),
-                  Text('Trasy (${appState.favoriteRoutes.length})'),
-                ],
-              ),
-            ),
+            Tab(text: 'Stacje (${appState.favoriteStations.length})'),
+            Tab(text: 'Trasy (${appState.favoriteRoutes.length})'),
           ],
         ),
       ),
@@ -203,21 +190,26 @@ class _FavoritesScreenState extends State<FavoritesScreen>
                     return ListTile(
                       leading: Icon(Icons.swap_calls,
                           color: theme.colorScheme.primary),
-                      title: Row(
+                      title: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Text(
-                              '${fav.fromStationName} - ${fav.toStationName}',
+                          Text(fav.fromStationName,
                               style: const TextStyle(
-                                  fontWeight: FontWeight.w600, fontSize: 15),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                                  fontWeight: FontWeight.w600, fontSize: 15)),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Icon(Icons.arrow_downward,
+                                size: 14, color: theme.colorScheme.outline),
                           ),
+                          Text(fav.toStationName,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w600, fontSize: 15)),
                         ],
                       ),
-                      subtitle: const Text(
-                          'Dotknij, aby wyszukać połączenia na tej trasie'),
+                      subtitle: const Padding(
+                        padding: EdgeInsets.only(top: 6),
+                        child: Text('Wyszukaj połączenia'),
+                      ),
                       trailing: IconButton(
                         icon: const Icon(Icons.delete_outline, size: 20),
                         onPressed: () => appState.removeFavoriteRoute(

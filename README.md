@@ -2,7 +2,7 @@
   <img src="assets/branding/kolejka_icon.png" width="104" alt="Logo Kolejka">
   <h1>Kolejka <sup>BETA</sup></h1>
   <p>Połączenia, tablice stacyjne i opóźnienia. Kolej pod ręką.</p>
-  <p><a href="https://marautech.github.io/kolejka/">Strona aplikacji</a> · <a href="https://github.com/MarauTech/kolejka/releases/tag/v1.0.0-beta.1">Pobierz APK</a> · <a href="https://github.com/MarauTech/kolejka/issues/new/choose">Zgłoś błąd</a></p>
+  <p><a href="https://marautech.github.io/kolejka/">Strona aplikacji</a> · <a href="https://github.com/MarauTech/kolejka/releases/tag/v1.0.0-beta.2">Pobierz APK</a> · <a href="https://github.com/MarauTech/kolejka/issues/new/choose">Zgłoś błąd</a></p>
   <img src="https://img.shields.io/badge/status-BETA-e5bd5a" alt="Status BETA">
   <img src="https://img.shields.io/badge/platforma-Android-16436d" alt="Android">
 </div>
@@ -19,7 +19,7 @@ Kolejka to niezależna aplikacja na Androida napisana we Flutterze. Korzysta z A
 
 ## Pobierz wersję BETA
 
-**[Kolejka 1.0.0-beta.1 — Android APK](https://github.com/MarauTech/kolejka/releases/download/v1.0.0-beta.1/kolejka-1.0.0-beta.1.apk)**
+**[Kolejka 1.0.0-beta.2 — Android APK](https://github.com/MarauTech/kolejka/releases/download/v1.0.0-beta.2/kolejka-1.0.0-beta.2.apk)**
 
 1. Pobierz APK na telefon z Androidem.
 2. Otwórz plik i, jeśli system poprosi, zezwól użytej przeglądarce na instalowanie aplikacji. Po instalacji możesz cofnąć to uprawnienie.

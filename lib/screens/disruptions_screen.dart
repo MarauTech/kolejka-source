@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../models/models.dart';
 import '../utils/category_utils.dart';
+import '../utils/search_utils.dart';
 
 class DisruptionsScreen extends StatefulWidget {
   const DisruptionsScreen({super.key});
@@ -17,6 +18,7 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
   List<Disruption> _disruptions = [];
   Map<String, String> _disruptionTypes = {};
   Map<String, String> _stationsMap = {};
+  String _filter = '';
 
   @override
   void initState() {
@@ -94,21 +96,27 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
           if (name.isNotEmpty) name
         ].join(' ');
         final dark = theme.brightness == Brightness.dark;
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-          decoration: BoxDecoration(
-              color: categoryColor(category, isDark: dark),
-              borderRadius: BorderRadius.circular(6)),
-          child: Text(
-              label.isNotEmpty
-                  ? label
-                  : snapshot.connectionState == ConnectionState.waiting
-                      ? 'Ustalanie numeru pociągu…'
-                      : 'Numer pociągu niedostępny',
-              style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: categoryTextColor(category, isDark: dark))),
+        return ConstrainedBox(
+          constraints:
+              BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width - 72),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(
+                color: categoryColor(category, isDark: dark),
+                borderRadius: BorderRadius.circular(6)),
+            child: Text(
+                label.isNotEmpty
+                    ? label
+                    : snapshot.connectionState == ConnectionState.waiting
+                        ? 'Ustalanie numeru pociągu…'
+                        : 'Numer pociągu niedostępny',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: categoryTextColor(category, isDark: dark)),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis),
+          ),
         );
       },
     );
@@ -132,6 +140,33 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
       return 'Brak szczegółowego opisu utrudnienia.';
     }
     return message;
+  }
+
+  String _headline(Disruption item, AppState appState) {
+    final start = _getStationName(item.startStationId, appState);
+    final end = _getStationName(item.endStationId, appState);
+    if (start.isNotEmpty || end.isNotEmpty) {
+      return [if (start.isNotEmpty) start, if (end.isNotEmpty) end].join(' – ');
+    }
+    final message = _message(item);
+    if (!message.startsWith('Brak szczegółowego')) {
+      final firstSentence = message.split(RegExp(r'\.\s')).first.trim();
+      if (firstSentence.isNotEmpty && firstSentence.length <= 80) {
+        return firstSentence;
+      }
+    }
+    return _typeLabel(item);
+  }
+
+  String _preview(Disruption item, String headline) {
+    var message = _message(item);
+    if (message.startsWith(headline)) {
+      message = message
+          .substring(headline.length)
+          .replaceFirst(RegExp(r'^[.\s]+'), '');
+    }
+    if (message.isEmpty) return 'Otwórz, aby zobaczyć szczegóły.';
+    return message.length > 120 ? '${message.substring(0, 120)}…' : message;
   }
 
   void _showDetails(BuildContext context, Disruption item, AppState appState) {
@@ -343,19 +378,52 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
       );
     }
 
+    final query = normalizeStationQuery(_filter);
+    final visible = _disruptions.where((item) {
+      if (query.isEmpty) return true;
+      return normalizeStationQuery([
+        _headline(item, appState),
+        _typeLabel(item),
+        _message(item),
+      ].join(' '))
+          .contains(query);
+    }).toList();
+
     return RefreshIndicator(
       onRefresh: _loadDisruptions,
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-        itemCount: _disruptions.length,
+        itemCount: visible.length + 1,
         itemBuilder: (context, index) {
-          final item = _disruptions[index];
+          if (index == 0) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+              child: Column(
+                children: [
+                  TextField(
+                    decoration: const InputDecoration(
+                      labelText: 'Filtruj utrudnienia',
+                      hintText: 'Stacja, odcinek lub treść komunikatu',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) => setState(() => _filter = value),
+                  ),
+                  if (visible.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 32),
+                      child: Text('Brak utrudnień pasujących do filtra.'),
+                    ),
+                ],
+              ),
+            );
+          }
+          final item = visible[index - 1];
           final typeName = _typeLabel(item);
           final startName = _getStationName(item.startStationId, appState);
           final endName = _getStationName(item.endStationId, appState);
-          final msg = _message(item);
-          final preview =
-              msg.length > 120 ? '${msg.substring(0, 120)}...' : msg;
+          final headline = _headline(item, appState);
+          final preview = _preview(item, headline);
 
           return Card(
             elevation: 1,
@@ -377,7 +445,7 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            typeName,
+                            headline,
                             style: const TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 15),
                             maxLines: 1,
@@ -386,7 +454,11 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
                         ),
                       ],
                     ),
-                    if (startName.isNotEmpty || endName.isNotEmpty) ...[
+                    if ((startName.isNotEmpty || endName.isNotEmpty) &&
+                        headline !=
+                            [startName, endName]
+                                .where((value) => value.isNotEmpty)
+                                .join(' – ')) ...[
                       const SizedBox(height: 6),
                       Text(
                         [
@@ -410,6 +482,15 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
                       ),
                     ],
                     const SizedBox(height: 8),
+                    if (headline != typeName &&
+                        typeName != 'Utrudnienie w ruchu')
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(typeName,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: theme.colorScheme.onSurfaceVariant)),
+                      ),
                     Wrap(
                       spacing: 12,
                       runSpacing: 4,

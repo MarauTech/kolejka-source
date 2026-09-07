@@ -152,7 +152,7 @@ void main() {
         final axis =
             tester.getTopLeft(find.byKey(const ValueKey('route-axis-0'))).dx;
         final station = tester.getTopLeft(find.text(stationName)).dx;
-        final platform = tester.getTopLeft(find.text('Per. II/2')).dx;
+        final platform = tester.getTopLeft(find.text('Per. II / Tor 2')).dx;
         expect(hour, lessThan(axis));
         expect(axis, lessThan(station));
         expect(station, lessThan(platform));

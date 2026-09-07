@@ -9,8 +9,12 @@ import '../widgets/connection_results.dart';
 class SearchScreen extends StatefulWidget {
   final Station? initialFromStation;
   final Station? initialToStation;
+  final bool searchOnStart;
   const SearchScreen(
-      {super.key, this.initialFromStation, this.initialToStation});
+      {super.key,
+      this.initialFromStation,
+      this.initialToStation,
+      this.searchOnStart = false});
   @override
   State<SearchScreen> createState() => _SearchScreenState();
 }
@@ -36,6 +40,11 @@ class _SearchScreenState extends State<SearchScreen>
     final now = DateTime.now();
     _selectedDate = DateUtils.dateOnly(now);
     _selectedTime = TimeOfDay.fromDateTime(now);
+    if (widget.searchOnStart && _fromStation != null && _toStation != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _performSearch();
+      });
+    }
   }
 
   void _changed(VoidCallback change) {
@@ -202,42 +211,6 @@ class _SearchScreenState extends State<SearchScreen>
                             borderRadius: BorderRadius.circular(4))),
                     child: const Text('WYSZUKAJ',
                         style: TextStyle(fontWeight: FontWeight.bold)))),
-            const SizedBox(height: 16),
-            Text('Ulubione trasy',
-                style: theme.textTheme.titleSmall
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            const Divider(),
-            if (state.favoriteRoutes.isEmpty) ...[
-              const Text('Brak ulubionych tras',
-                  style: TextStyle(fontSize: 13)),
-              Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton(
-                      onPressed: _results == null ||
-                              _fromStation == null ||
-                              _toStation == null
-                          ? null
-                          : () => state.toggleFavoriteRoute(
-                              _fromStation!, _toStation!),
-                      child: const Text(
-                          'Dodaj trasę do ulubionych po wyszukaniu połączenia',
-                          style: TextStyle(fontSize: 12)))),
-            ],
-            ...state.favoriteRoutes.map((f) => Row(children: [
-                  Expanded(
-                      child: InkWell(
-                          onTap: () => _searchFavoriteRoute(f),
-                          child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              child: Text(
-                                  '${f.fromStationName} → ${f.toStationName}',
-                                  style: const TextStyle(fontSize: 13))))),
-                  IconButton(
-                      tooltip: 'Usuń trasę',
-                      onPressed: () => state.removeFavoriteRoute(
-                          f.fromStationId, f.toStationId),
-                      icon: const Icon(Icons.close, size: 18)),
-                ])),
             if (_isSearching)
               const Padding(
                   padding: EdgeInsets.symmetric(vertical: 12),
@@ -256,6 +229,52 @@ class _SearchScreenState extends State<SearchScreen>
             if (_results != null)
               ConnectionResults(
                   results: _results!, selectedDeparture: _searchedAt!),
+            const SizedBox(height: 16),
+            ExpansionTile(
+              key: const ValueKey('favorite-routes-section'),
+              initiallyExpanded: _results == null && !_isSearching,
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: EdgeInsets.zero,
+              title: Text('Ulubione trasy',
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.bold)),
+              children: [
+                if (state.favoriteRoutes.isEmpty) ...[
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Brak ulubionych tras',
+                        style: TextStyle(fontSize: 13)),
+                  ),
+                  Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton(
+                          onPressed: _results == null ||
+                                  _fromStation == null ||
+                                  _toStation == null
+                              ? null
+                              : () => state.toggleFavoriteRoute(
+                                  _fromStation!, _toStation!),
+                          child: const Text('Dodaj bieżącą trasę',
+                              style: TextStyle(fontSize: 12)))),
+                ],
+                ...state.favoriteRoutes.map((f) => Row(children: [
+                      Expanded(
+                          child: InkWell(
+                              onTap: () => _searchFavoriteRoute(f),
+                              child: Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12),
+                                  child: Text(
+                                      '${f.fromStationName} → ${f.toStationName}',
+                                      style: const TextStyle(fontSize: 13))))),
+                      IconButton(
+                          tooltip: 'Usuń trasę',
+                          onPressed: () => state.removeFavoriteRoute(
+                              f.fromStationId, f.toStationId),
+                          icon: const Icon(Icons.close, size: 18)),
+                    ])),
+              ],
+            ),
             const SizedBox(height: 16),
           ])),
     );

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/models.dart';
+import '../utils/search_utils.dart';
 
 class StationSearchField extends StatefulWidget {
   final String label;
@@ -26,6 +27,7 @@ class _StationSearchFieldState extends State<StationSearchField> {
   late TextEditingController _controller;
   Timer? _debounce;
   final FocusNode _focusNode = FocusNode();
+  bool _queryHasMatch = true;
 
   @override
   void initState() {
@@ -69,12 +71,12 @@ class _StationSearchFieldState extends State<StationSearchField> {
           return const Iterable<Station>.empty();
         }
 
-        final query = textEditingValue.text.toLowerCase().trim();
+        final query = normalizeStationQuery(textEditingValue.text);
         final startsWithList = <Station>[];
         final containsList = <Station>[];
 
         for (final station in widget.stations) {
-          final sName = station.name.toLowerCase();
+          final sName = normalizeStationQuery(station.name);
           if (sName.startsWith(query)) {
             startsWithList.add(station);
           } else if (sName.contains(query)) {
@@ -113,6 +115,9 @@ class _StationSearchFieldState extends State<StationSearchField> {
                 : const UnderlineInputBorder(),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            helperText: controller.text.trim().isNotEmpty && !_queryHasMatch
+                ? 'Nie znaleziono stacji'
+                : null,
             suffixIcon: controller.text.isNotEmpty
                 ? IconButton(
                     icon: const Icon(Icons.clear, size: 20),
@@ -130,6 +135,15 @@ class _StationSearchFieldState extends State<StationSearchField> {
               widget.onStationSelected(null);
             }
             if (_debounce?.isActive ?? false) _debounce!.cancel();
+            final query = normalizeStationQuery(value);
+            final hasMatch = query.isEmpty ||
+                widget.stations.any((station) =>
+                    normalizeStationQuery(station.name).contains(query));
+            if (hasMatch != _queryHasMatch) {
+              setState(() => _queryHasMatch = hasMatch);
+            } else {
+              setState(() {});
+            }
             _debounce = Timer(const Duration(milliseconds: 300), () {
               if (value.isEmpty) {
                 widget.onStationSelected(null);
@@ -139,6 +153,7 @@ class _StationSearchFieldState extends State<StationSearchField> {
         );
       },
       optionsViewBuilder: (context, onSelected, options) {
+        final hasQuery = _controller.text.trim().isNotEmpty;
         return Align(
           alignment: Alignment.topLeft,
           child: Material(
@@ -150,24 +165,31 @@ class _StationSearchFieldState extends State<StationSearchField> {
                 maxHeight: 250,
                 maxWidth: MediaQuery.of(context).size.width - 32,
               ),
-              child: ListView.builder(
-                padding: EdgeInsets.zero,
-                shrinkWrap: true,
-                itemCount: options.length,
-                itemBuilder: (context, index) {
-                  final option = options.elementAt(index);
-                  return ListTile(
-                    dense: true,
-                    leading: Icon(Icons.train,
-                        size: 18, color: theme.colorScheme.primary),
-                    title: Text(
-                      option.name,
-                      style: TextStyle(color: theme.colorScheme.onSurface),
+              child: options.isEmpty && hasQuery
+                  ? const Padding(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      child: Text('Nie znaleziono stacji'),
+                    )
+                  : ListView.builder(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      itemCount: options.length,
+                      itemBuilder: (context, index) {
+                        final option = options.elementAt(index);
+                        return ListTile(
+                          dense: true,
+                          leading: Icon(Icons.train,
+                              size: 18, color: theme.colorScheme.primary),
+                          title: Text(
+                            option.name,
+                            style:
+                                TextStyle(color: theme.colorScheme.onSurface),
+                          ),
+                          onTap: () => onSelected(option),
+                        );
+                      },
                     ),
-                    onTap: () => onSelected(option),
-                  );
-                },
-              ),
             ),
           ),
         );

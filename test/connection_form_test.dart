@@ -88,7 +88,7 @@ void main() {
         expect(find.byType(SearchScreen), findsOneWidget);
         expect(find.byType(ConnectionResults), findsOneWidget);
         expect(tester.getTopLeft(find.text('Ulubione trasy')).dy,
-            lessThan(tester.getTopLeft(find.text('Wyniki połączeń')).dy));
+            greaterThan(tester.getTopLeft(find.text('Wyniki połączeń')).dy));
         final earlier = find.textContaining('Pokaż wcześniejsze połączenia');
         if (earlier.evaluate().isNotEmpty) {
           await tester.ensureVisible(earlier);

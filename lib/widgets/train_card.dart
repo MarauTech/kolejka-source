@@ -52,6 +52,10 @@ class TrainCard extends StatelessWidget {
         day: lastLeg.toStop.arrivalDay);
     final delay = depDelay > arrDelay ? depDelay : arrDelay;
     final cancelled = c.isCancelled || lastLeg.isCancelled;
+    final hasRealtime = dep?.departureDelayMinutes != null ||
+        dep?.actualDeparture != null ||
+        arr?.arrivalDelayMinutes != null ||
+        arr?.actualArrival != null;
     final platform = formatPlatformTrack(
         dep?.platform ?? c.fromStop.departurePlatform,
         dep?.track ?? c.fromStop.departureTrack);
@@ -59,6 +63,37 @@ class TrainCard extends StatelessWidget {
         arr?.platform ?? lastLeg.toStop.arrivalPlatform,
         arr?.track ?? lastLeg.toStop.arrivalTrack);
     final cat = c.route.commercialCategorySymbol ?? c.commercialCategory;
+    final operatingDate = c.operatingDate.isNotEmpty
+        ? c.operatingDate
+        : c.operation?.operatingDate ?? '';
+    final effectiveDuration = app_date.effectiveTravelTime(
+      plannedDeparture: dep?.plannedDeparture ?? c.departureTime,
+      plannedArrival: arr?.plannedArrival ?? c.arrivalTime,
+      actualDeparture: dep?.actualDeparture,
+      actualArrival: arr?.actualArrival,
+      departureDelay: depDelay,
+      arrivalDelay: arrDelay,
+      operatingDate: operatingDate,
+      departureDay: c.fromStop.departureDay,
+      arrivalDay: lastLeg.toStop.arrivalDay,
+    );
+    final durationText = effectiveDuration.isNotEmpty
+        ? '${hasRealtime ? 'Przewidywany' : 'Planowo'}: $effectiveDuration'
+        : c.duration.isNotEmpty
+            ? 'Planowo: ${c.duration}'
+            : '';
+    final statusText = cancelled
+        ? 'Odwołany'
+        : delay > 0
+            ? app_date.formatDelay(delay)
+            : hasRealtime
+                ? 'Planowo'
+                : 'Wg rozkładu';
+    final statusColor = cancelled || delay > 0
+        ? Colors.red
+        : hasRealtime
+            ? Colors.green
+            : theme.colorScheme.onSurfaceVariant;
     return Material(
         color: theme.colorScheme.surface,
         child: InkWell(
@@ -81,13 +116,11 @@ class TrainCard extends StatelessWidget {
                     const Icon(Icons.arrow_forward, size: 16),
                     _time(
                         c.arrivalTime, arr?.actualArrival, arrDelay, cancelled),
-                    Text(cancelled ? 'Odwołany' : app_date.formatDelay(delay),
+                    Text(statusText,
                         style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: cancelled || delay > 0
-                                ? Colors.red
-                                : Colors.green)),
+                            color: statusColor)),
                   ]),
               const SizedBox(height: 5),
               Text('${c.fromStationName} \u2192 ${c.toStationName}',
@@ -121,7 +154,7 @@ class TrainCard extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                   [
-                    if (c.duration.isNotEmpty) c.duration,
+                    if (durationText.isNotEmpty) durationText,
                     c.isDirect
                         ? 'Bezpośredni'
                         : c.transfersCount == 1

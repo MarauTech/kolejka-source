@@ -1,5 +1,17 @@
 ﻿# Historia zmian
 
+## 1.0.0-beta.2 — 2026-09-07
+
+- Czytelne rozróżnienie danych czasu rzeczywistego od informacji wyłącznie rozkładowych.
+- Czas przejazdu jest liczony z tych samych godzin, które widzi pasażer.
+- Wyszukiwanie stacji działa także bez polskich znaków i informuje o braku wyników.
+- Polski kalendarz i krótsze etykiety dolnej nawigacji na małych ekranach.
+- Wyniki połączeń znajdują się przed ulubionymi trasami, a wybór ulubionej trasy od razu wyszukuje połączenie.
+- Czytelniejsze przystanki trasy z pełnymi etykietami przyjazdu, odjazdu, peronu i toru.
+- Utrudnienia mają nagłówki odcinków, filtr i krótsze opisy bez powtarzających się etykiet.
+- Poprawione kolory kategorii złożonych oraz przewidywany czas podróży przy opóźnieniach.
+- 93 testy, w tym regresje interfejsu dla szerokości 320–411 px.
+
 ## 1.0.0-beta.1 — 2026-09-06
 
 Pierwsze publiczne wydanie BETA na Androida.

@@ -35,7 +35,7 @@ void main() {
         trainCategory: 'TLK',
         carrier: 'PKP Intercity',
         direction: 'Jelenia Gora',
-        delayMinutes: 0,
+        delayMinutes: null,
         isCancelled: false,
         scheduleId: 101,
         orderId: 1,
@@ -202,6 +202,7 @@ void main() {
 
     // Verify delay texts
     expect(find.text('Planowo'), findsWidgets);
+    expect(find.text('Wg rozkładu'), findsOneWidget);
     expect(find.text('+12 min'), findsOneWidget);
     expect(find.text('+3 min'), findsOneWidget);
     expect(find.text('Odwo\u0142any'), findsOneWidget);

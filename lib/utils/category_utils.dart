@@ -12,7 +12,7 @@ import 'package:flutter/material.dart';
 ///   KS                                           = blue
 ///   other / unknown                              = neutral grey
 Color categoryColor(String? symbol, {bool isDark = false}) {
-  final cat = (symbol ?? '').toUpperCase().trim();
+  final cat = primaryCategorySymbol(symbol);
 
   // Red group: Os, R, RP, PR, KW, LKA / REGIO / POLREGIO / RE
   if (cat == 'OS' ||
@@ -60,6 +60,43 @@ Color categoryColor(String? symbol, {bool isDark = false}) {
 
   // Unknown / other: neutral grey
   return isDark ? const Color(0xFF78909C) : const Color(0xFF546E7A);
+}
+
+/// Composite API symbols such as `EC/IC` use the first recognised component.
+/// The displayed label stays untouched while its badge keeps a familiar colour.
+String primaryCategorySymbol(String? symbol) {
+  final raw = (symbol ?? '').toUpperCase().trim();
+  const known = {
+    'OS',
+    'R',
+    'REGIO',
+    'RP',
+    'PR',
+    'KW',
+    'ŁKA',
+    'LKA',
+    'POLREGIO',
+    'RE',
+    'IR',
+    'KM',
+    'TLK',
+    'IC',
+    'EC',
+    'EN',
+    'EIC',
+    'EIP',
+    'SKM',
+    'KD',
+    'KMŁ',
+    'KML',
+    'KŚ',
+    'KS'
+  };
+  if (known.contains(raw)) return raw;
+  for (final part in raw.split(RegExp(r'[/+\s-]+'))) {
+    if (known.contains(part)) return part;
+  }
+  return raw;
 }
 
 /// Returns a text color that is readable on top of [categoryColor].

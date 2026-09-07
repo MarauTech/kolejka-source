@@ -123,6 +123,7 @@ void main() {
             isTrue);
       }
       expect(tester.takeException(), isNull);
+      expect(find.textContaining('Przewidywany:'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       state.dispose();
     });

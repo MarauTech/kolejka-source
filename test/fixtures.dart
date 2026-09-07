@@ -56,6 +56,8 @@ class FixtureState extends AppState {
   @override
   Future<void> loadStationBoard(int stationId) async {}
   @override
+  Future<void> loadDictionaries() async {}
+  @override
   Future<List<ConnectionResult>> searchConnections(
       {required Station fromStation,
       required Station toStation,

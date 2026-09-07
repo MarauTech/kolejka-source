@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
+import 'models/models.dart';
 import 'screens/station_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/train_search_screen.dart';
@@ -33,6 +35,13 @@ class KolejkaApp extends StatelessWidget {
     return MaterialApp(
       title: 'Kolejka',
       debugShowCheckedModeBanner: false,
+      locale: const Locale('pl', 'PL'),
+      supportedLocales: const [Locale('pl', 'PL')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       themeMode: appState.themeMode,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -82,23 +91,12 @@ class _MainScreenState extends State<MainScreen> {
   // Tablica is the default starting tab (index 0)
   int _currentIndex = 0;
 
-  late final List<Widget> _screens;
+  FavoriteRoute? _requestedRoute;
+  int _searchRequest = 0;
 
   @override
   void initState() {
     super.initState();
-
-    _screens = [
-      const StationScreen(), // 1. Tablica (default)
-      const SearchScreen(), // 2. Połączenia
-      const TrainSearchScreen(), // 3. Pociąg
-      FavoritesScreen(
-        onNavigateToTab: (index) {
-          setState(() => _currentIndex = index);
-        },
-      ), // 4. Ulubione
-      const MoreScreen(), // 5. Więcej
-    ];
 
     // Initialize dictionaries & nearest station on start
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -109,13 +107,46 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final requestedRoute = _requestedRoute;
+    final screens = <Widget>[
+      const StationScreen(),
+      SearchScreen(
+        key: ValueKey('connections-$_searchRequest'),
+        initialFromStation: requestedRoute == null
+            ? null
+            : Station(
+                id: requestedRoute.fromStationId,
+                name: requestedRoute.fromStationName),
+        initialToStation: requestedRoute == null
+            ? null
+            : Station(
+                id: requestedRoute.toStationId,
+                name: requestedRoute.toStationName),
+        searchOnStart: requestedRoute != null,
+      ),
+      const TrainSearchScreen(),
+      FavoritesScreen(onOpenRoute: (route) {
+        setState(() {
+          _requestedRoute = route;
+          _searchRequest++;
+          _currentIndex = 1;
+        });
+      }),
+      const MoreScreen(),
+    ];
 
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
-        children: _screens,
+        children: screens,
       ),
       bottomNavigationBar: NavigationBar(
+        labelTextStyle: WidgetStateProperty.resolveWith((states) => TextStyle(
+              fontSize: 10.5,
+              fontWeight: states.contains(WidgetState.selected)
+                  ? FontWeight.w600
+                  : FontWeight.w500,
+            )),
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) {
           setState(() => _currentIndex = index);
@@ -131,7 +162,7 @@ class _MainScreenState extends State<MainScreen> {
             icon: const Icon(Icons.alt_route_outlined),
             selectedIcon:
                 Icon(Icons.alt_route, color: theme.colorScheme.primary),
-            label: 'Połączenia',
+            label: 'Trasy',
           ),
           NavigationDestination(
             icon: const Icon(Icons.train_outlined),

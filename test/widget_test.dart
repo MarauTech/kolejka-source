@@ -23,7 +23,7 @@ void main() {
     test('formatDelay formats on-time and delay minutes without emoji', () {
       expect(app_date.formatDelay(0), 'Planowo');
       expect(app_date.formatDelay(12), '+12 min');
-      expect(app_date.formatDelay(null), 'Planowo');
+      expect(app_date.formatDelay(null), 'Wg rozkładu');
     });
   });
 

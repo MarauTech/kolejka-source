@@ -1,6 +1,6 @@
 ﻿# Dane i prywatność w Kolejce BETA
 
-Stan opisu: 6 września 2026, wersja 1.0.0-beta.1. Opis dotyczy obecnego kodu aplikacji.
+Stan opisu: 7 września 2026, wersja 1.0.0-beta.2. Opis dotyczy obecnego kodu aplikacji.
 
 ## Dane przechowywane lokalnie
 

@@ -41,6 +41,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
                       Station(id: fav.fromStationId, name: fav.fromStationName),
                   initialToStation:
                       Station(id: fav.toStationId, name: fav.toStationName),
+                  searchOnStart: true,
                 )));
   }
 

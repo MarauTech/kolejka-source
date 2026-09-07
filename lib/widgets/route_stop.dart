@@ -80,6 +80,12 @@ class RouteStopWidget extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.baseline,
                   textBaseline: TextBaseline.alphabetic,
                   children: [
+                    Text(arrival ? 'Prz.' : 'Odj.',
+                        style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w500,
+                            color: theme.colorScheme.onSurfaceVariant)),
+                    const SizedBox(width: 3),
                     Text(display,
                         key: ValueKey(
                             'route-time-$index-${arrival ? 'arrival' : 'departure'}'),
@@ -137,7 +143,7 @@ class RouteStopWidget extends StatelessWidget {
             (isLast
                 ? scheduleData.arrivalTrack ?? scheduleData.departureTrack
                 : scheduleData.departureTrack ?? scheduleData.arrivalTrack),
-        compact: true);
+        compact: false);
     final arrival = _hasTime(
         realtimeData?.plannedArrival ?? scheduleData.arrivalTime,
         realtimeData?.actualArrival);
@@ -151,7 +157,7 @@ class RouteStopWidget extends StatelessWidget {
     return IntrinsicHeight(
         child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       SizedBox(
-          width: 82,
+          width: 94,
           child: Padding(
               padding: const EdgeInsets.only(top: 12, right: 3, bottom: 12),
               child: Column(
@@ -225,7 +231,7 @@ class RouteStopWidget extends StatelessWidget {
                           if (platform != null) ...[
                             const SizedBox(width: 6),
                             SizedBox(
-                                width: 64,
+                                width: 84,
                                 child: Text(platform,
                                     textAlign: TextAlign.right,
                                     style: TextStyle(

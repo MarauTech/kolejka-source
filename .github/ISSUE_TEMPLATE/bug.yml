@@ -6,7 +6,7 @@ body:
     id: version
     attributes:
       label: Wersja Kolejki i Androida
-      placeholder: Kolejka 1.0.0-beta.1, Android 15
+      placeholder: Kolejka 1.0.0-beta.2, Android 15
     validations:
       required: true
   - type: textarea

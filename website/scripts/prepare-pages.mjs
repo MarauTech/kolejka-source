@@ -19,7 +19,7 @@ async function prepare(directory) {
 }
 await prepare(output);
 const index = await readFile(path.join(output,'index.html'),'utf8');
-if (!index.includes('Kolej pod ręką.') || !index.includes('kolejka-1.0.0-beta.1.apk')) throw Error('Missing page content or APK link');
+if (!index.includes('Kolej pod ręką.') || !index.includes('kolejka-1.0.0-beta.2.apk')) throw Error('Missing page content or APK link');
 for (const match of index.matchAll(/(?:src|href)="(\/kolejka\/[^"?#]+)"/g)) {
   const relative = match[1].slice(prefix.length + 1);
   if (relative && !relative.endsWith('/')) await stat(path.join(output,relative));
