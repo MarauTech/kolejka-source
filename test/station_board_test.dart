@@ -174,37 +174,31 @@ void main() {
     expect(find.text('Tablica stacyjna'), findsOneWidget);
     expect(find.text('Warszawa Centralna'), findsOneWidget);
 
-    // Verify category badges
-    expect(find.text('TLK'), findsOneWidget);
-    expect(find.text('R'), findsOneWidget);
-    expect(find.text('EIC'), findsOneWidget);
-    expect(find.text('REGIO'), findsOneWidget);
-
-    // Verify train numbers
-    expect(find.text('36103'), findsOneWidget);
-    expect(find.text('64223'), findsOneWidget);
-    expect(find.text('1410'), findsOneWidget);
-    expect(find.text('5410'), findsOneWidget);
-    expect(find.text('93450'), findsOneWidget);
-    expect(find.text('3818'), findsOneWidget);
-    expect(find.text('37000'), findsOneWidget);
+    // Verify compact category + train-number badges
+    expect(find.text('TLK 36103'), findsOneWidget);
+    expect(find.text('R 64223'), findsOneWidget);
+    expect(find.text('EIC 1410'), findsOneWidget);
+    expect(find.text('IC 5410'), findsOneWidget);
+    expect(find.text('REGIO 93450'), findsOneWidget);
+    expect(find.text('IC 3818'), findsOneWidget);
+    expect(find.text('IC 37000'), findsOneWidget);
 
     // Verify train names
     expect(find.text('Snie\u017cka'), findsOneWidget);
     expect(find.text('MEHOFFER'), findsOneWidget);
 
     // Verify platform/track formatting
-    expect(find.text('Per. II / Tor 1'), findsOneWidget);
-    expect(find.text('Per. IV / Tor 8'), findsOneWidget);
+    expect(find.text('Per. II/1'), findsOneWidget);
+    expect(find.text('Per. IV/8'), findsOneWidget);
     expect(find.text('Tor 3'), findsOneWidget);
     expect(find.text('Per. II'), findsOneWidget);
-    expect(find.text('Per. II / Tor 3'), findsOneWidget);
+    expect(find.text('Per. II/3'), findsOneWidget);
 
     // Verify delay texts
-    expect(find.text('Planowo'), findsWidgets);
-    expect(find.text('Wg rozkładu'), findsOneWidget);
-    expect(find.text('+12 min'), findsOneWidget);
-    expect(find.text('+3 min'), findsOneWidget);
+    expect(find.text('+0'), findsWidgets);
+    expect(find.text('Rozkład'), findsOneWidget);
+    expect(find.text('+12'), findsOneWidget);
+    expect(find.text('+3'), findsOneWidget);
     expect(find.text('Odwo\u0142any'), findsOneWidget);
 
     // Planned time for the delayed train should be shown (strikethrough)
@@ -218,6 +212,85 @@ void main() {
 
     // Verify no crash on tab switch
     expect(find.byType(StationScreen), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'Station board reveals earlier and later departures and arrivals in pages',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final now = DateTime.now();
+    String time(DateTime value) =>
+        '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+    StationBoardItem item(String number, DateTime date) => StationBoardItem(
+          time: time(date),
+          trainNumber: number,
+          trainCategory: 'IC',
+          carrier: 'PKP Intercity',
+          direction: 'Kraków Główny',
+          scheduleId: int.parse(number),
+          orderId: 1,
+          operatingDate: date.toIso8601String().split('T').first,
+          platform: '2',
+          track: '3',
+          delayMinutes: 0,
+          plannedTime: time(date),
+          raw: const {},
+        );
+
+    final state = AppState()
+      ..currentStation = Station(id: 1, name: 'Warszawa Centralna')
+      ..stationDepartures = [
+        item('1001', now.subtract(const Duration(minutes: 20))),
+        ...List.generate(
+            10,
+            (index) => item(
+                '${1100 + index}', now.add(Duration(minutes: 20 + index * 5)))),
+      ]
+      ..stationArrivals = [
+        item('2001', now.subtract(const Duration(minutes: 20))),
+        ...List.generate(
+            10,
+            (index) => item(
+                '${2100 + index}', now.add(Duration(minutes: 20 + index * 5)))),
+      ];
+
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: state,
+      child: const MaterialApp(home: StationScreen()),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Dziś,'), findsOneWidget);
+    expect(find.text('IC 1001'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('toggle-earlier-departures')));
+    await tester.pumpAndSettle();
+    expect(find.text('IC 1001'), findsOneWidget);
+    await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('show-more-departures')), 250,
+        scrollable: find.byType(Scrollable).last);
+    expect(find.text('Pokaż kolejne odjazdy (2)'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('show-more-departures')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('show-more-departures')), findsNothing);
+
+    await tester.tap(find.text('Przyjazdy'));
+    await tester.pumpAndSettle();
+    expect(find.text('IC 2001'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('toggle-earlier-arrivals')));
+    await tester.pumpAndSettle();
+    expect(find.text('IC 2001'), findsOneWidget);
+    await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('show-more-arrivals')), 250,
+        scrollable: find.byType(Scrollable).last);
+    expect(find.text('Pokaż kolejne przyjazdy (2)'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('show-more-arrivals')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('show-more-arrivals')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

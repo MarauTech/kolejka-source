@@ -1,5 +1,13 @@
 ﻿# Historia zmian
 
+## 1.0.0-beta.3 — 2026-09-07
+
+- Tablice odjazdów i przyjazdów mają zwarty układ wzorowany na tablicach kolejowych: godzina, opóźnienie, pociąg, kierunek i peron są widoczne bez otwierania szczegółów.
+- Wcześniejsze kursy można rozwinąć osobno, a kolejne późniejsze kursy są dokładane po osiem pozycji.
+- Ekran połączeń otrzymał spójny nagłówek, zamknięty formularz A/B, czytelny wybór daty i godziny oraz wyraźną akcję wyszukiwania.
+- Układ tablic i wyszukiwarki został sprawdzony w jasnym i ciemnym motywie dla szerokości 320–411 px.
+- 94 testy, w tym nowa regresja rozwijania wcześniejszych i kolejnych odjazdów oraz przyjazdów.
+
 ## 1.0.0-beta.2 — 2026-09-07
 
 - Czytelne rozróżnienie danych czasu rzeczywistego od informacji wyłącznie rozkładowych.

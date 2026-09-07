@@ -17,10 +17,14 @@ class StationScreen extends StatefulWidget {
 
 class _StationScreenState extends State<StationScreen>
     with SingleTickerProviderStateMixin {
+  static const int _boardPageSize = 8;
   late TabController _tabController;
   bool _isSelectingStation = false;
   bool _showPreviousDepartures = false;
   bool _showPreviousArrivals = false;
+  int _visibleDepartureCount = _boardPageSize;
+  int _visibleArrivalCount = _boardPageSize;
+  int? _lastStationId;
 
   @override
   void initState() {
@@ -35,7 +39,7 @@ class _StationScreenState extends State<StationScreen>
   }
 
   String? _formatPlatformTrack(String? platform, String? track) {
-    return formatPlatformTrack(platform, track);
+    return formatPlatformTrack(platform, track, compact: true);
   }
 
   Widget _buildSectionDivider(String title, ThemeData theme) {
@@ -106,39 +110,39 @@ class _StationScreenState extends State<StationScreen>
         style: TextStyle(
           color: Colors.red,
           fontWeight: FontWeight.bold,
-          fontSize: 12,
+          fontSize: 11,
         ),
       );
     }
 
     if (delay == null) {
       return Text(
-        'Wg rozkładu',
+        'Rozkład',
         style: TextStyle(
           color: theme.colorScheme.onSurfaceVariant,
           fontWeight: FontWeight.w600,
-          fontSize: 12,
+          fontSize: 11,
         ),
       );
     }
 
     if (delay == 0) {
       return const Text(
-        'Planowo',
+        '+0',
         style: TextStyle(
           color: Colors.green,
           fontWeight: FontWeight.w600,
-          fontSize: 12,
+          fontSize: 11,
         ),
       );
     }
 
     return Text(
-      '+$delay min',
+      '+$delay',
       style: const TextStyle(
         color: Colors.red,
         fontWeight: FontWeight.bold,
-        fontSize: 12,
+        fontSize: 11,
       ),
     );
   }
@@ -153,6 +157,83 @@ class _StationScreenState extends State<StationScreen>
     final effective =
         actual ?? planned?.add(Duration(minutes: item.delayMinutes ?? 0));
     return effective != null && now.difference(effective).inMinutes > 5;
+  }
+
+  String _boardDateLabel(List<StationBoardItem> items, DateTime now) {
+    DateTime date = now;
+    if (items.isNotEmpty) {
+      date = DateTime.tryParse(items.first.operatingDate) ?? now;
+    }
+    final day = DateTime(date.year, date.month, date.day);
+    final today = DateTime(now.year, now.month, now.day);
+    final prefix = day == today
+        ? 'Dziś'
+        : day == today.add(const Duration(days: 1))
+            ? 'Jutro'
+            : const [
+                'pon.',
+                'wt.',
+                'śr.',
+                'czw.',
+                'pt.',
+                'sob.',
+                'niedz.'
+              ][date.weekday - 1];
+    final weekday = const [
+      'pon.',
+      'wt.',
+      'śr.',
+      'czw.',
+      'pt.',
+      'sob.',
+      'niedz.'
+    ][date.weekday - 1];
+    final formatted = app_date.formatDateDisplay(date);
+    return prefix == 'Dziś' || prefix == 'Jutro'
+        ? '$prefix, $weekday, $formatted'
+        : '$prefix, $formatted';
+  }
+
+  Widget _buildBoardAction({
+    required Key key,
+    required String label,
+    required IconData icon,
+    required VoidCallback onTap,
+    required ThemeData theme,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      child: Material(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          key: key,
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 17, color: theme.colorScheme.primary),
+                const SizedBox(width: 7),
+                Flexible(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: theme.colorScheme.primary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildStationHeader(AppState appState) {
@@ -421,106 +502,98 @@ class _StationScreenState extends State<StationScreen>
 
     final showPast =
         isArrival ? _showPreviousArrivals : _showPreviousDepartures;
-    // If all items are past, show them so user is not presented with an empty list
-    final hasUpcoming = upcomingItems.isNotEmpty;
-    final displayItems = (showPast || !hasUpcoming)
-        ? [...pastItems, ...upcomingItems]
-        : upcomingItems;
+    final visibleCount =
+        isArrival ? _visibleArrivalCount : _visibleDepartureCount;
+    final visibleUpcoming = upcomingItems.take(visibleCount).toList();
+    final remaining = upcomingItems.length - visibleUpcoming.length;
+    final children = <Widget>[
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(14, 7, 14, 6),
+        color: theme.colorScheme.surfaceContainerLow,
+        child: Text(
+          _boardDateLabel(items, now),
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    ];
+
+    if (pastItems.isNotEmpty && upcomingItems.isNotEmpty) {
+      children.add(_buildBoardAction(
+        key: ValueKey(isArrival
+            ? 'toggle-earlier-arrivals'
+            : 'toggle-earlier-departures'),
+        label: showPast
+            ? (isArrival
+                ? 'Ukryj wcześniejsze przyjazdy'
+                : 'Ukryj wcześniejsze odjazdy')
+            : (isArrival
+                ? 'Pokaż wcześniejsze przyjazdy (${pastItems.length})'
+                : 'Pokaż wcześniejsze odjazdy (${pastItems.length})'),
+        icon: showPast ? Icons.expand_less : Icons.history,
+        onTap: () => setState(() {
+          if (isArrival) {
+            _showPreviousArrivals = !_showPreviousArrivals;
+          } else {
+            _showPreviousDepartures = !_showPreviousDepartures;
+          }
+        }),
+        theme: theme,
+      ));
+    }
+
+    void addRows(List<StationBoardItem> rows, {required bool past}) {
+      for (final item in rows) {
+        children.add(_buildRow(item, isArrival, past, theme, appState));
+        children.add(Divider(
+          height: 1,
+          thickness: 0.6,
+          indent: 14,
+          endIndent: 14,
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.45),
+        ));
+      }
+    }
+
+    if (showPast || upcomingItems.isEmpty) {
+      addRows(pastItems, past: true);
+    }
+    if (showPast && pastItems.isNotEmpty && upcomingItems.isNotEmpty) {
+      children.add(_buildSectionDivider('Aktualne i nadchodzące', theme));
+    }
+    addRows(visibleUpcoming, past: false);
+
+    if (remaining > 0) {
+      children.add(_buildBoardAction(
+        key:
+            ValueKey(isArrival ? 'show-more-arrivals' : 'show-more-departures'),
+        label: isArrival
+            ? 'Pokaż kolejne przyjazdy ($remaining)'
+            : 'Pokaż kolejne odjazdy ($remaining)',
+        icon: Icons.expand_more,
+        onTap: () => setState(() {
+          if (isArrival) {
+            _visibleArrivalCount += _boardPageSize;
+          } else {
+            _visibleDepartureCount += _boardPageSize;
+          }
+        }),
+        theme: theme,
+      ));
+    }
 
     return RefreshIndicator(
       onRefresh: () => appState.loadStationBoard(appState.currentStation!.id),
-      child: ListView.separated(
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.only(
-          top: 4,
           bottom: MediaQuery.of(context).padding.bottom + 80,
         ),
-        itemCount:
-            displayItems.length + (hasUpcoming && pastItems.isNotEmpty ? 1 : 0),
-        separatorBuilder: (_, index) {
-          if (hasUpcoming && pastItems.isNotEmpty && index == 0) {
-            return const SizedBox.shrink();
-          }
-          if (showPast &&
-              hasUpcoming &&
-              pastItems.isNotEmpty &&
-              index == pastItems.length) {
-            return _buildSectionDivider('Aktualne i nadchodzące', theme);
-          }
-          return Divider(
-            height: 1,
-            thickness: 0.6,
-            indent: 14,
-            endIndent: 14,
-            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
-          );
-        },
-        itemBuilder: (context, index) {
-          if (hasUpcoming && pastItems.isNotEmpty) {
-            if (index == 0) {
-              return Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                child: InkWell(
-                  onTap: () {
-                    setState(() {
-                      if (isArrival) {
-                        _showPreviousArrivals = !_showPreviousArrivals;
-                      } else {
-                        _showPreviousDepartures = !_showPreviousDepartures;
-                      }
-                    });
-                  },
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest
-                          .withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          showPast ? Icons.expand_less : Icons.expand_more,
-                          size: 16,
-                          color: theme.colorScheme.primary,
-                        ),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            showPast
-                                ? (isArrival
-                                    ? 'Ukryj wcze\u015bniejsze przyjazdy'
-                                    : 'Ukryj wcze\u015bniejsze odjazdy')
-                                : (isArrival
-                                    ? 'Poka\u017c wcze\u015bniejsze przyjazdy (${pastItems.length})'
-                                    : 'Poka\u017c wcze\u015bniejsze odjazdy (${pastItems.length})'),
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: theme.colorScheme.primary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }
-            final itemIndex = index - 1;
-            final item = displayItems[itemIndex];
-            final isPastItem = showPast && itemIndex < pastItems.length;
-            return _buildRow(item, isArrival, isPastItem, theme, appState);
-          }
-
-          final item = displayItems[index];
-          final isPastItem = pastItems.contains(item);
-          return _buildRow(item, isArrival, isPastItem, theme, appState);
-        },
+        children: children,
       ),
     );
   }
@@ -541,9 +614,8 @@ class _StationScreenState extends State<StationScreen>
         : (item.plannedTime ?? item.time);
     final struckTime = hasDelay ? item.plannedTime : null;
 
-    final timeColor = isCancelled
-        ? Colors.red
-        : (hasDelay ? Colors.red : theme.colorScheme.primary);
+    final timeColor =
+        isCancelled || hasDelay ? Colors.red : theme.colorScheme.onSurface;
     final catTextColor = categoryTextColor(item.trainCategory, isDark: isDark);
 
     return Opacity(
@@ -597,13 +669,12 @@ class _StationScreenState extends State<StationScreen>
             });
           },
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 1. LEWA KOLUMNA: GODZINA
                 SizedBox(
-                  width: 50,
+                  width: 48,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -616,124 +687,118 @@ class _StationScreenState extends State<StationScreen>
                           letterSpacing: -0.3,
                         ),
                       ),
-                      if (struckTime != null && struckTime != mainTime) ...[
-                        const SizedBox(height: 1),
-                        Text(
-                          struckTime,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: theme.colorScheme.outline,
-                            decoration: TextDecoration.lineThrough,
-                          ),
-                        ),
-                      ],
+                      const SizedBox(height: 1),
+                      _buildDelayStatus(item.delayMinutes, isCancelled, theme),
+                      if (struckTime != null && struckTime != mainTime)
+                        Text(struckTime,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: theme.colorScheme.outline,
+                              decoration: TextDecoration.lineThrough,
+                            )),
                     ],
                   ),
                 ),
                 const SizedBox(width: 8),
-
-                // 2. ŚRODKOWA + PRAWA KOLUMNA
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Wiersz 1: [Badge] [Numer] [Nazwa pociągu / przewoźnik] ... [Peron/Tor]
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          if (item.trainCategory.isNotEmpty) ...[
+                          if (item.trainCategory.isNotEmpty)
                             Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 5, vertical: 1.5),
+                              width: 18,
+                              height: 18,
                               decoration: BoxDecoration(
-                                color: catColor,
-                                borderRadius: BorderRadius.circular(4),
+                                color: catColor.withValues(alpha: 0.16),
+                                borderRadius: BorderRadius.circular(3),
                               ),
-                              child: Text(
-                                item.trainCategory,
-                                style: TextStyle(
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.bold,
-                                  color: catTextColor,
-                                ),
-                              ),
+                              child:
+                                  Icon(Icons.train, size: 13, color: catColor),
                             ),
+                          if (item.trainCategory.isNotEmpty)
                             const SizedBox(width: 5),
-                          ],
-                          if (item.trainNumber.isNotEmpty) ...[
-                            Text(
-                              item.trainNumber,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                          ],
-                          if (item.trainName.isNotEmpty) ...[
-                            Expanded(
-                              child: Text(
-                                item.trainName,
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  fontStyle: FontStyle.italic,
-                                  color: theme.colorScheme.onSurfaceVariant,
+                          if (item.trainCategory.isNotEmpty ||
+                              item.trainNumber.isNotEmpty)
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 78),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: catColor,
+                                  borderRadius: BorderRadius.circular(3),
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ] else if (shortCarrier.isNotEmpty) ...[
-                            Expanded(
-                              child: Text(
-                                shortCarrier,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: theme.colorScheme.outline,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    [item.trainCategory, item.trainNumber]
+                                        .where((value) => value.isNotEmpty)
+                                        .join(' '),
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: catTextColor,
+                                    ),
+                                  ),
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                          ] else ...[
-                            const Spacer(),
-                          ],
-                        ],
-                      ),
-                      if (platTrack != null)
-                        Padding(
-                            padding: const EdgeInsets.only(top: 3),
-                            child: Text(platTrack,
-                                style: TextStyle(
-                                    fontSize: 11.5,
-                                    color:
-                                        theme.colorScheme.onSurfaceVariant))),
-                      const SizedBox(height: 3),
-
-                      // Wiersz 2: [Strzałka] [Kierunek] ... [Status/Opóźnienie]
-                      Row(
-                        children: [
+                          const SizedBox(width: 4),
                           Icon(
                             isArrival ? Icons.arrow_back : Icons.arrow_forward,
                             size: 13,
                             color: theme.colorScheme.outline,
                           ),
-                          const SizedBox(width: 4),
+                          const SizedBox(width: 3),
                           Expanded(
                             child: Text(
                               item.direction,
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
-                                fontSize: 13.5,
+                                fontSize: 13,
                               ),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          const SizedBox(width: 6),
-                          _buildDelayStatus(
-                              item.delayMinutes, isCancelled, theme),
+                          if (platTrack != null) ...[
+                            const SizedBox(width: 4),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 58),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(platTrack,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    )),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
+                      if (item.trainName.isNotEmpty ||
+                          shortCarrier.isNotEmpty) ...[
+                        const SizedBox(height: 5),
+                        Text(
+                          item.trainName.isNotEmpty
+                              ? item.trainName
+                              : shortCarrier,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontStyle: item.trainName.isNotEmpty
+                                ? FontStyle.italic
+                                : FontStyle.normal,
+                            color: theme.colorScheme.outline,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -749,6 +814,14 @@ class _StationScreenState extends State<StationScreen>
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final theme = Theme.of(context);
+    final stationId = appState.currentStation?.id;
+    if (_lastStationId != stationId) {
+      _lastStationId = stationId;
+      _showPreviousDepartures = false;
+      _showPreviousArrivals = false;
+      _visibleDepartureCount = _boardPageSize;
+      _visibleArrivalCount = _boardPageSize;
+    }
 
     return Scaffold(
       appBar: AppBar(

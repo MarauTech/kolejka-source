@@ -142,74 +142,122 @@ class _SearchScreenState extends State<SearchScreen>
         _toStation != null &&
         state.isRouteFavorite(_fromStation!.id, _toStation!.id);
     return Scaffold(
-      appBar: AppBar(title: const Text('Połączenia kolejowe'), actions: [
-        if (_fromStation != null &&
-            _toStation != null &&
-            _fromStation!.id != _toStation!.id)
-          IconButton(
-              tooltip: favorite
-                  ? 'Usuń trasę z ulubionych'
-                  : 'Dodaj trasę do ulubionych',
-              icon: Icon(favorite ? Icons.star : Icons.star_border),
-              onPressed: () =>
-                  state.toggleFavoriteRoute(_fromStation!, _toStation!)),
-      ]),
+      appBar: AppBar(
+          title: const Text('Połączenia kolejowe',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          actions: [
+            if (_fromStation != null &&
+                _toStation != null &&
+                _fromStation!.id != _toStation!.id)
+              IconButton(
+                  tooltip: favorite
+                      ? 'Usuń trasę z ulubionych'
+                      : 'Dodaj trasę do ulubionych',
+                  icon: Icon(favorite ? Icons.star : Icons.star_border),
+                  onPressed: () =>
+                      state.toggleFavoriteRoute(_fromStation!, _toStation!)),
+          ]),
       body: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Row(children: [
-              Expanded(
+            Padding(
+              padding: const EdgeInsets.only(left: 2, bottom: 8),
+              child: Text('Zaplanuj podróż',
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold)),
+            ),
+            Container(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: theme.colorScheme.outlineVariant
+                        .withValues(alpha: 0.75)),
+              ),
+              child: Row(children: [
+                Expanded(
+                    child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 2, 2, 4),
                   child: Column(children: [
-                StationSearchField(
-                    key: const ValueKey('origin-field'),
-                    label: 'Stacja początkowa',
-                    marker: 'A',
-                    stations: state.stations,
-                    selectedStation: _fromStation,
-                    onStationSelected: (s) => _changed(() => _fromStation = s)),
-                StationSearchField(
-                    key: const ValueKey('destination-field'),
-                    label: 'Stacja docelowa',
-                    marker: 'B',
-                    stations: state.stations,
-                    selectedStation: _toStation,
-                    onStationSelected: (s) => _changed(() => _toStation = s)),
-              ])),
-              IconButton(
-                  tooltip: 'Zamień stacje',
-                  onPressed: _swapStations,
-                  icon: const Icon(Icons.swap_vert))
-            ]),
+                    StationSearchField(
+                        key: const ValueKey('origin-field'),
+                        label: 'Skąd jedziesz?',
+                        marker: 'A',
+                        stations: state.stations,
+                        selectedStation: _fromStation,
+                        onStationSelected: (s) =>
+                            _changed(() => _fromStation = s)),
+                    StationSearchField(
+                        key: const ValueKey('destination-field'),
+                        label: 'Dokąd jedziesz?',
+                        marker: 'B',
+                        stations: state.stations,
+                        selectedStation: _toStation,
+                        onStationSelected: (s) =>
+                            _changed(() => _toStation = s)),
+                  ]),
+                )),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: IconButton.filledTonal(
+                      tooltip: 'Zamień stacje',
+                      onPressed: _swapStations,
+                      icon: const Icon(Icons.swap_vert, size: 20)),
+                )
+              ]),
+            ),
             if (state.isLoading && state.stations.isEmpty)
               const Padding(
                   padding: EdgeInsets.only(top: 8),
                   child: Text('Wczytywanie stacji…')),
-            const SizedBox(height: 8),
-            Wrap(
-                spacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  const Text('Odj.', style: TextStyle(fontSize: 13)),
-                  TextButton(
-                      key: const ValueKey('connection-date'),
-                      onPressed: _pickDate,
-                      child: Text(app_date.formatDateDisplay(_selectedDate))),
-                  TextButton(
-                      key: const ValueKey('connection-time'),
-                      onPressed: _pickTime,
-                      child: Text(app_date.formatTimeDisplay(
-                          _selectedTime.hour, _selectedTime.minute))),
-                  TextButton(onPressed: _setNow, child: const Text('Teraz')),
-                ]),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(children: [
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Icon(Icons.schedule_outlined,
+                      size: 18, color: theme.colorScheme.primary),
+                ),
+                const SizedBox(width: 2),
+                Expanded(
+                  child: Wrap(
+                      spacing: 0,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        TextButton(
+                            key: const ValueKey('connection-date'),
+                            onPressed: _pickDate,
+                            child: Text(
+                                app_date.formatDateDisplay(_selectedDate))),
+                        TextButton(
+                            key: const ValueKey('connection-time'),
+                            onPressed: _pickTime,
+                            child: Text(app_date.formatTimeDisplay(
+                                _selectedTime.hour, _selectedTime.minute))),
+                      ]),
+                ),
+                TextButton(
+                    onPressed: _setNow,
+                    child: const Text('Teraz',
+                        style: TextStyle(fontWeight: FontWeight.w700))),
+              ]),
+            ),
+            const SizedBox(height: 10),
             SizedBox(
-                height: 44,
-                child: FilledButton(
+                height: 46,
+                child: FilledButton.icon(
                     onPressed: _isSearching ? null : _performSearch,
                     style: FilledButton.styleFrom(
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4))),
-                    child: const Text('WYSZUKAJ',
+                            borderRadius: BorderRadius.circular(10))),
+                    icon: const Icon(Icons.search, size: 20),
+                    label: const Text('WYSZUKAJ',
                         style: TextStyle(fontWeight: FontWeight.bold)))),
             if (_isSearching)
               const Padding(

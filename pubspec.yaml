@@ -2,7 +2,7 @@ name: trainly
 description: Rozkład jazdy kolei w Polsce
 publish_to: 'none'
 
-version: 1.0.0-beta.2+3
+version: 1.0.0-beta.3+4
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

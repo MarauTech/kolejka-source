@@ -145,15 +145,15 @@ void main() {
       expect(find.textContaining('Najbliższa stacja (GPS)'), findsOneWidget);
       await tester.tap(find.textContaining('Pokaż wcześniejsze odjazdy'));
       await tester.pumpAndSettle();
-      expect(find.text('1111'), findsOneWidget);
-      expect(find.text('2222'), findsOneWidget);
+      expect(find.text('IC 1111'), findsOneWidget);
+      expect(find.text('IC 2222'), findsOneWidget);
       expect(find.textContaining('Aktualne i nadchodzące'), findsOneWidget);
       expect(
           tester
               .widgetList<Divider>(find.byType(Divider))
               .any((d) => (d.thickness ?? 0) >= 1.5),
           isTrue);
-      expect(find.text('Per. IV / Tor 3'), findsWidgets);
+      expect(find.text('Per. IV/3'), findsWidgets);
       final delayed = state.stationDepartures.last.time;
       expect(
           tester
