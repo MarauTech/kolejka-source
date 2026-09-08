@@ -25,10 +25,28 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
   @override
   void initState() {
     super.initState();
+    final saved = context.read<AppState>().cachedDisruptions;
+    if (saved != null) _readData(saved);
     _loadDisruptions();
   }
 
+  void _readData(Map<String, dynamic> data) {
+    final types = (data['disruptionTypes'] as Map<String, dynamic>? ?? {})
+        .map((k, v) => MapEntry(k, v.toString()));
+    _disruptions = (data['disruptions'] as List<dynamic>? ?? [])
+        .map((e) => Disruption.fromJson(e as Map<String, dynamic>))
+        .where((item) => item.resolveDescription(types) != null)
+        .toList();
+    _disruptionTypes = (data['disruptionTypes'] as Map<String, dynamic>? ?? {})
+        .map((k, v) => MapEntry(k, v.toString()));
+    _stationsMap = (data['stations'] as Map<String, dynamic>? ?? {})
+        .map((k, v) => MapEntry(k, v.toString()));
+    _generatedAt = app_date
+        .parsePdpDateTime((data['generatedAt'] ?? data['ts'])?.toString());
+  }
+
   Future<void> _loadDisruptions() async {
+    if (_isLoading) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -53,7 +71,9 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
 
       if (mounted) {
         setState(() {
-          _disruptions = parsed;
+          _disruptions = parsed
+              .where((item) => item.resolveDescription(types) != null)
+              .toList();
           _disruptionTypes = types;
           _stationsMap = stations;
           _generatedAt = generatedAt == null
@@ -81,10 +101,11 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
     return appState.getStationName(stationId);
   }
 
-  Widget _buildAffectedTrainChip(
-      Map<String, dynamic> ref, AppState appState, ThemeData theme) {
+  Widget _buildAffectedTrainChip(Map<String, dynamic> ref, AppState appState,
+      ThemeData theme, Future<bool> prepared) {
     return FutureBuilder<Map<String, dynamic>>(
-      future: appState.resolveAffectedTrain(ref),
+      future: (() async =>
+          await prepared ? await appState.resolveAffectedTrain(ref) : ref)(),
       builder: (context, snapshot) {
         final data = snapshot.data ?? ref;
         final number = (data['nationalNumber'] ?? data['trainNumber'] ?? '')
@@ -130,7 +151,9 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
   }
 
   String _typeLabel(Disruption item) {
-    final label = _disruptionTypes[item.disruptionTypeCode]?.trim();
+    final label = (_disruptionTypes[item.disruptionTypeCode] ??
+            _disruptionTypes[item.message?.trim()])
+        ?.trim();
     if (label == null ||
         label.isEmpty ||
         label.length > 80 ||
@@ -141,12 +164,7 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
   }
 
   String _message(Disruption item) {
-    final message = item.message?.trim() ?? '';
-    if (message.isEmpty ||
-        RegExp(r'^utr_\d+$', caseSensitive: false).hasMatch(message)) {
-      return 'Brak szczegółowego opisu utrudnienia.';
-    }
-    return message;
+    return item.resolveDescription(_disruptionTypes) ?? '';
   }
 
   String _headline(Disruption item, AppState appState) {
@@ -189,6 +207,9 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
     final typeName = _typeLabel(item);
     final startName = _getStationName(item.startStationId, appState);
     final endName = _getStationName(item.endStationId, appState);
+    // This belongs to the open sheet, not to a MediaQuery/theme rebuild.
+    var visibleTrainCount = 20;
+    final prepared = appState.prepareAffectedTrains(item.affectedRoutes);
 
     showModalBottomSheet(
       context: context,
@@ -197,7 +218,6 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
-        var visibleTrainCount = 20;
         return StatefulBuilder(builder: (context, setModalState) {
           final totalTrainCount = item.affectedRoutes.length;
           final visibleCount = visibleTrainCount.clamp(0, totalTrainCount);
@@ -304,8 +324,8 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
                         runSpacing: 8,
                         children: item.affectedRoutes
                             .take(visibleCount)
-                            .map((r) =>
-                                _buildAffectedTrainChip(r, appState, theme))
+                            .map((r) => _buildAffectedTrainChip(
+                                r, appState, theme, prepared))
                             .toList(),
                       ),
                       const SizedBox(height: 12),
@@ -364,6 +384,13 @@ class _DisruptionsScreenState extends State<DisruptionsScreen> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (_errorMessage != null && _disruptions.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                  '$_errorMessage Wyświetlam ostatnio pobrane dane; mogą być nieaktualne.',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ),
           if (_generatedAt case final generatedAt?)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),

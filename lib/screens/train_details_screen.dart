@@ -29,9 +29,10 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen>
     with SingleTickerProviderStateMixin {
   Timer? _autoRefreshTimer;
   late final AnimationController _positionPulse;
-  late final Animation<double> _positionPulseCurve;
+  late final CurvedAnimation _positionPulseCurve;
   bool _isLoading = false;
   bool _routeLoadError = false;
+  bool _refreshFailed = false;
   TrainOperation? _operation;
   TrainRoute? _fullRoute;
   bool _showPreviousStations = false; // State for collapsible past stations
@@ -40,8 +41,7 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen>
   void initState() {
     super.initState();
     _positionPulse = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1000))
-      ..repeat(reverse: true);
+        vsync: this, duration: const Duration(milliseconds: 1000));
     _positionPulseCurve =
         CurvedAnimation(parent: _positionPulse, curve: Curves.easeInOut);
     final initialOperation = widget.result.operation;
@@ -64,8 +64,21 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context) ||
+        !TickerMode.valuesOf(context).enabled) {
+      _positionPulse.stop();
+      _positionPulse.value = 0.5;
+    } else if (!_positionPulse.isAnimating) {
+      _positionPulse.repeat(reverse: true);
+    }
+  }
+
+  @override
   void dispose() {
     _autoRefreshTimer?.cancel();
+    _positionPulseCurve.dispose();
     _positionPulse.dispose();
     super.dispose();
   }
@@ -108,14 +121,16 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen>
     setState(() {
       _isLoading = true;
       _routeLoadError = false;
+      _refreshFailed = false;
     });
     final appState = context.read<AppState>();
     try {
       // Fetch the schedule first: it can supply the distinct train-order ID.
       if (_fullRoute == null) {
         try {
-          final data = await appState.api.getScheduleRoute(
-              widget.result.route.scheduleId, widget.result.route.orderId);
+          final data = await appState.getScheduleRoute(
+              widget.result.route.scheduleId, widget.result.route.orderId,
+              operatingDate: _operatingDate);
           if (!mounted) return;
           final fetched = TrainRoute.fromJson(data);
           if (fetched.scheduleId == widget.result.route.scheduleId &&
@@ -145,12 +160,16 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen>
             ? updated
             : null;
       });
+    } catch (error) {
+      debugPrint('[TrainDetails] Refresh unavailable: $error');
+      if (mounted) setState(() => _refreshFailed = true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Widget _buildDelayBadge(int delay, bool isCancelled) {
+    final theme = Theme.of(context);
     if (_operation == null) {
       return const Text('Wg rozkładu', style: TextStyle(fontSize: 12));
     }
@@ -158,25 +177,25 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen>
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-          color: Colors.red.withValues(alpha: 0.12),
+          color: theme.colorScheme.error.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.red),
+          border: Border.all(color: theme.colorScheme.error),
         ),
-        child: const Text('Odwołany',
-            style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+        child: Text('Odwołany',
+            style: TextStyle(
+                color: theme.colorScheme.error, fontWeight: FontWeight.bold)),
       );
     }
 
     Color color;
     String text;
     if (delay <= 0) {
-      color = Colors.green;
+      color = theme.brightness == Brightness.dark
+          ? const Color(0xFF83C998)
+          : const Color(0xFF26743D);
       text = 'Planowo';
-    } else if (delay <= 10) {
-      color = Colors.orange.shade800;
-      text = '+$delay min';
     } else {
-      color = Colors.red;
+      color = theme.colorScheme.error;
       text = '+$delay min';
     }
 
@@ -244,10 +263,10 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen>
     }
 
     final isDark = theme.brightness == Brightness.dark;
-    final background =
-        isDark ? const Color(0xFF191D25) : theme.colorScheme.surface;
+    final background = theme.colorScheme.surface;
     final number = widget.result.trainNumber;
-    final category = widget.result.commercialCategory;
+    final category =
+        route.commercialCategorySymbol ?? widget.result.commercialCategory;
     final trainName = widget.result.trainName;
     final visibleStart = _showPreviousStations ? 0 : hiddenPassedCount;
     String stationName(StationOnRoute station) =>
@@ -278,8 +297,25 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen>
             child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  if (_refreshFailed)
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                          _operation != null
+                              ? 'Nie udało się odświeżyć kursowania. Wyświetlam zapisane dane; mogą być nieaktualne.'
+                              : 'Dane o kursowaniu są niedostępne. Pozycję pokazuję według rozkładu.',
+                          style: TextStyle(
+                              fontSize: 12, color: theme.colorScheme.error)),
+                    ),
+                  Container(
+                      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(
+                              color: theme.colorScheme.outlineVariant
+                                  .withValues(alpha: .65))),
                       child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -313,7 +349,6 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen>
                                       style: theme.textTheme.titleLarge
                                           ?.copyWith(
                                               fontWeight: FontWeight.w700)),
-                                  _buildDelayBadge(currentDelay, isCancelled),
                                 ]),
                             if (trainName.isNotEmpty)
                               Padding(
@@ -323,10 +358,21 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen>
                                           ?.copyWith(
                                               fontWeight: FontWeight.w600))),
                             const SizedBox(height: 12),
-                            Text('$relStart \u2192 $relEnd',
+                            Text(relStart,
                                 style: const TextStyle(
-                                    fontSize: 15, fontWeight: FontWeight.w600)),
-                            const SizedBox(height: 6),
+                                    fontSize: 17, fontWeight: FontWeight.w600)),
+                            Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 5),
+                                child: Icon(Icons.south_rounded,
+                                    size: 18,
+                                    color: theme.colorScheme.onSurfaceVariant)),
+                            Text(relEnd,
+                                style: const TextStyle(
+                                    fontSize: 17, fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 16),
+                            _buildDelayBadge(currentDelay, isCancelled),
+                            const SizedBox(height: 12),
                             Wrap(spacing: 14, runSpacing: 4, children: [
                               Text(
                                   _getShortCarrierName(
@@ -370,7 +416,7 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen>
                   else ...[
                     if (hiddenPassedCount > 0)
                       Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          padding: const EdgeInsets.only(left: 104, right: 12),
                           child: TextButton.icon(
                               key: const ValueKey('toggle-previous-stations'),
                               onPressed: () => setState(() =>
@@ -387,7 +433,9 @@ class _TrainDetailsScreenState extends State<TrainDetailsScreen>
                     Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: AnimatedSize(
-                            duration: const Duration(milliseconds: 200),
+                            duration: MediaQuery.disableAnimationsOf(context)
+                                ? Duration.zero
+                                : const Duration(milliseconds: 200),
                             curve: Curves.easeOutCubic,
                             alignment: Alignment.topCenter,
                             child: Column(children: [

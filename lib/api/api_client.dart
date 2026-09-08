@@ -2,23 +2,26 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../config.dart';
+import '../services/app_diagnostics.dart';
 
 class ApiClient {
+  void close() => _dio.close(force: true);
   late final Dio _dio;
 
   int? hourlyRemaining;
   int? dailyRemaining;
 
-  ApiClient() {
-    _dio = Dio(BaseOptions(
-      baseUrl: apiBaseUrl,
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 30),
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-    ));
+  ApiClient({Dio? dio}) {
+    _dio = dio ??
+        Dio(BaseOptions(
+          baseUrl: apiBaseUrl,
+          connectTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 30),
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        ));
 
     _dio.interceptors.add(InterceptorsWrapper(
       onResponse: (response, handler) {
@@ -33,13 +36,8 @@ class ApiClient {
       },
     ));
 
-    if (kDebugMode) {
-      _dio.interceptors.add(LogInterceptor(
-        requestBody: false,
-        responseBody: false,
-        logPrint: (obj) => debugPrint('[API] $obj'),
-      ));
-    }
+    // Do not log HTTP headers or payloads, including in debug builds.
+    // Only explicit, non-sensitive diagnostics below are emitted.
   }
 
   void _extractRateLimits(Response response) {
@@ -70,6 +68,7 @@ class ApiClient {
     Map<String, dynamic>? queryParameters,
     bool retry = true,
   }) async {
+    AppDiagnostics.operation = 'Pobieranie ${Uri.parse(path).path}';
     // Check if we are currently rate limited
     if (_rateLimitResetTime != null) {
       if (DateTime.now().isBefore(_rateLimitResetTime!)) {

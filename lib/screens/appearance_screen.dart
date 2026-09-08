@@ -24,6 +24,36 @@ class AppearanceScreen extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 8),
             children: [
               Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Styl interfejsu',
+                          style: theme.textTheme.titleMedium),
+                      const SizedBox(height: 12),
+                      SegmentedButton<bool>(
+                        segments: const [
+                          ButtonSegment(
+                              value: false,
+                              label: Text('Klasyczny'),
+                              icon: Icon(Icons.crop_square_rounded)),
+                          ButtonSegment(
+                              value: true,
+                              label: Text('Liquid Glass'),
+                              icon: Icon(Icons.blur_on_rounded)),
+                        ],
+                        selected: {appState.liquidGlass},
+                        onSelectionChanged: (value) =>
+                            appState.setLiquidGlass(value.single),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                          'Subtelne szkło na pasku nawigacji i panelach. Efekt dopasowuje się do płynności urządzenia.',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant)),
+                    ]),
+              ),
+              Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                 child: Text(
                   'MOTYW APLIKACJI',

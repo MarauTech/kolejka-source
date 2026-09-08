@@ -54,10 +54,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   }
 
   Widget _buildStatCard(
-      String title, int count, int total, Color color, IconData icon) {
+      String title, int count, double? percentage, Color color, IconData icon) {
     final theme = Theme.of(context);
-    final percentage =
-        total > 0 ? (count / total * 100).toStringAsFixed(1) : '0.0';
 
     return Card(
       elevation: 1,
@@ -105,14 +103,15 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                         color: color,
                       ),
                     )),
-                Text(
-                  '$percentage%',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w500,
-                    fontSize: 13,
-                    color: theme.colorScheme.onSurfaceVariant,
+                if (percentage != null)
+                  Text(
+                    '${percentage.toStringAsFixed(1).replaceAll('.', ',')}%',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                ),
               ],
             ),
           ],
@@ -147,6 +146,9 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
 
   Widget _buildBody() {
     final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    final success = Color(dark ? 0xFF81C784 : 0xFF23733C);
+    final warning = Color(dark ? 0xFFFFB74D : 0xFF955300);
 
     if (_isLoading && _stats == null) {
       return const Center(child: CircularProgressIndicator());
@@ -197,6 +199,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     }
 
     final total = _stats!.totalTrains;
+    final shares = _stats!.percentages;
 
     return RefreshIndicator(
       onRefresh: _loadStats,
@@ -227,9 +230,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                     Text(
                       'Pociągi w dobie dzisiejszej',
                       style: TextStyle(
-                          color: theme.colorScheme.onPrimary
-                              .withValues(alpha: 0.8),
-                          fontSize: 14),
+                          color: theme.colorScheme.onPrimary, fontSize: 14),
                     ),
                     const SizedBox(height: 6),
                     Text(
@@ -245,9 +246,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                       Text(
                         'Data statystyk: ${app_date.formatDate(_stats!.date)}',
                         style: TextStyle(
-                            color: theme.colorScheme.onPrimary
-                                .withValues(alpha: 0.7),
-                            fontSize: 12),
+                            color: theme.colorScheme.onPrimary, fontSize: 12),
                       ),
                     ],
                   ],
@@ -264,6 +263,12 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
             ),
             const SizedBox(height: 10),
 
+            if (shares == null && total > 0)
+              const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: Text(
+                      'Podział statusów jest niepełny. Pokazujemy dostępne liczby.')),
+
             // Grid of status cards
             GridView.count(
               crossAxisCount: 2,
@@ -273,13 +278,25 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               mainAxisSpacing: 10,
               mainAxisExtent: 155,
               children: [
-                _buildStatCard('W trasie', _stats!.inProgress, total,
-                    Colors.blue, Icons.directions_railway),
-                _buildStatCard('Zakończone', _stats!.completed, total,
-                    Colors.green, Icons.check_circle_outline),
-                _buildStatCard('Nie rozpoczęły', _stats!.notStarted, total,
-                    Colors.grey, Icons.schedule),
-                _buildStatCard('Odwołane', _stats!.cancelled, total, Colors.red,
+                _buildStatCard(
+                    'W trasie',
+                    _stats!.inProgress,
+                    shares?['inProgress'],
+                    theme.colorScheme.primary,
+                    Icons.directions_railway),
+                _buildStatCard('Zakończone', _stats!.completed,
+                    shares?['completed'], success, Icons.check_circle_outline),
+                _buildStatCard(
+                    'Nie rozpoczęły',
+                    _stats!.notStarted,
+                    shares?['notStarted'],
+                    theme.colorScheme.onSurfaceVariant,
+                    Icons.schedule),
+                _buildStatCard(
+                    'Odwołane',
+                    _stats!.cancelled,
+                    shares?['cancelled'],
+                    theme.colorScheme.error,
                     Icons.cancel_outlined),
               ],
             ),
@@ -299,11 +316,11 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                       Container(
                         padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withValues(alpha: 0.12),
+                          color: warning.withValues(alpha: 0.12),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.warning_amber_rounded,
-                            size: 18, color: Colors.orange),
+                        child: Icon(Icons.warning_amber_rounded,
+                            size: 18, color: warning),
                       ),
                       const SizedBox(width: 12),
                       const Expanded(
@@ -314,11 +331,11 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                         ),
                       ),
                       Text(
-                        _stats!.partialCancelled.toString(),
-                        style: const TextStyle(
+                        '${_stats!.partialCancelled}${shares == null ? '' : ' · ${shares['partialCancelled']!.toStringAsFixed(1).replaceAll('.', ',')}%'}',
+                        style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 18,
-                            color: Colors.orange),
+                            color: warning),
                       ),
                     ],
                   ),

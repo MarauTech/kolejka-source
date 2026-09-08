@@ -353,6 +353,41 @@ class TrainOperation {
 
 /// Operation statistics from /api/v1/operations/statistics
 class OperationStatistics {
+  /// S/P/C/X/Q are distinct statuses in OperationStatisticsDto. Only display
+  /// shares when this snapshot accounts for every train exactly once.
+  Map<String, double>? get percentages {
+    final counts = {
+      'notStarted': notStarted,
+      'inProgress': inProgress,
+      'completed': completed,
+      'cancelled': cancelled,
+      'partialCancelled': partialCancelled,
+    };
+    if (totalTrains <= 0 ||
+        counts.values.any((n) => n < 0) ||
+        counts.values.fold(0, (a, b) => a + b) != totalTrains) {
+      return null;
+    }
+    final tenths =
+        counts.map((key, n) => MapEntry(key, n * 1000 ~/ totalTrains));
+    final ranked = counts.keys.toList()
+      ..sort((a, b) {
+        final delta = (counts[b]! * 1000 % totalTrains)
+            .compareTo(counts[a]! * 1000 % totalTrains);
+        return delta != 0
+            ? delta
+            : counts.keys
+                .toList()
+                .indexOf(a)
+                .compareTo(counts.keys.toList().indexOf(b));
+      });
+    final missing = 1000 - tenths.values.fold(0, (a, b) => a + b);
+    for (var i = 0; i < missing; i++) {
+      tenths[ranked[i]] = tenths[ranked[i]]! + 1;
+    }
+    return tenths.map((key, n) => MapEntry(key, n / 10));
+  }
+
   final String? generatedAt;
   final String? date;
   final int totalTrains;
@@ -394,11 +429,35 @@ class OperationStatistics {
 
 /// Disruption from /api/v1/disruptions
 class Disruption {
+  /// DisruptionDto exposes message and a description in DisruptionTypes.
+  /// Neither internal identifiers nor an empty fallback are passenger content.
+  String? resolveDescription(Map<String, String> types) {
+    // The live feed also uses message="utr_55" without disruptionTypeCode.
+    // That is a dictionary reference, not passenger-readable text.
+    for (final value in [
+      message,
+      types[disruptionTypeCode],
+      types[message?.trim()]
+    ]) {
+      final text = value?.trim();
+      if (text == null ||
+          text.isEmpty ||
+          RegExp(r'^utr_\d+$', caseSensitive: false).hasMatch(text) ||
+          {'null', '-', 'brak opisu', 'brak informacji'}
+              .contains(text.toLowerCase())) {
+        continue;
+      }
+      return text;
+    }
+    return null;
+  }
+
   final int disruptionId;
   final String? disruptionTypeCode;
   final int? startStationId;
   final int? endStationId;
   final String? message;
+
   /// Creation time supplied for this individual alert, when the feed has it.
   /// This deliberately does not use the top-level `generatedAt` snapshot time.
   final String? createdAt;
@@ -549,6 +608,19 @@ class ConnectionResult {
   });
 
   String get departureTime => fromStop.departureTime ?? '';
+  DateTime? effectiveDeparture({String fallbackDate = ''}) {
+    final stop =
+        operationForStop(fromStop, route.stations, operation?.stations ?? []);
+    return app_date.parsePdpDateTime(stop?.actualDeparture) ??
+        app_date
+            .scheduleDateTime(
+              stop?.plannedDeparture ?? departureTime,
+              operatingDate.isNotEmpty ? operatingDate : fallbackDate,
+              day: fromStop.departureDay,
+            )
+            ?.add(Duration(minutes: departureDelay));
+  }
+
   String get arrivalTime =>
       (secondLeg != null
           ? secondLeg!.toStop.arrivalTime

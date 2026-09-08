@@ -63,9 +63,12 @@ android/key.properties
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
 **/.wrangler/
 website/out/
 website/dist/
+website/dist-previous-beta2/
 website/.vite/
 website/.git/
 website/.openai/

@@ -214,7 +214,31 @@ String formatTimeSafe(String? timeStr) {
 /// Schedule TimeSpan is relative to the operating day; operations use ISO dates.
 DateTime? scheduleDateTime(String? value, String operatingDate, {int? day}) {
   if (value == null || value.isEmpty) return null;
-  if (value.contains('T')) return parsePdpDateTime(value);
+  if (value.contains('T')) {
+    final timestamp = parsePdpDateTime(value);
+    final operatingDay = DateTime.tryParse(operatingDate);
+    // Some operation responses stamp every planned stop with the service's
+    // start date. An explicit route day fixes that date after midnight. Keep
+    // already dated later stops intact, and never adjust actual timestamps.
+    if (timestamp != null &&
+        operatingDay != null &&
+        day != null &&
+        day > 0 &&
+        timestamp.year == operatingDay.year &&
+        timestamp.month == operatingDay.month &&
+        timestamp.day == operatingDay.day) {
+      return DateTime(
+          timestamp.year,
+          timestamp.month,
+          timestamp.day + day,
+          timestamp.hour,
+          timestamp.minute,
+          timestamp.second,
+          timestamp.millisecond,
+          timestamp.microsecond);
+    }
+    return timestamp;
+  }
   final date = DateTime.tryParse(operatingDate);
   final minutes = _timeSpanToMinutes(value);
   if (date == null || minutes == null) return null;

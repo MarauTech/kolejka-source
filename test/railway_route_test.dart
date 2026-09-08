@@ -142,9 +142,13 @@ void main() {
         final arrival = tester
             .widget<Text>(find.byKey(const ValueKey('route-time-0-arrival')));
         expect(arrival.data, '18:53');
-        expect(arrival.style?.color, Colors.red);
-        expect(find.text('+1'), findsOneWidget);
-        expect(find.text('+0'), findsOneWidget);
+        expect(
+            arrival.style?.color,
+            Theme.of(tester.element(find.byType(RouteStopWidget)))
+                .colorScheme
+                .error);
+        expect(find.text('+1 min'), findsOneWidget);
+        expect(find.text('+0'), findsNothing);
         expect(find.text(notice), findsOneWidget);
         final hour = tester
             .getTopLeft(find.byKey(const ValueKey('route-time-0-arrival')))
@@ -269,8 +273,7 @@ void main() {
         await tester.drag(
             find.byType(SingleChildScrollView), const Offset(0, 1400));
         await tester.pump(const Duration(milliseconds: 250));
-        final collapse =
-            find.byKey(const ValueKey('toggle-previous-stations'));
+        final collapse = find.byKey(const ValueKey('toggle-previous-stations'));
         await tester.ensureVisible(collapse);
         await tester.tap(collapse);
         await tester.pump(const Duration(milliseconds: 250));

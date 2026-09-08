@@ -105,9 +105,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 250));
       for (final value in ['10:18', '11:18']) {
         expect(
-            tester
-                .widgetList<Text>(find.text(value))
-                .any((t) => t.style?.color == Colors.red),
+            tester.widgetList<Text>(find.text(value)).any((t) =>
+                t.style?.color ==
+                Theme.of(tester.element(find.text(value).first))
+                    .colorScheme
+                    .error),
             isTrue);
       }
       expect(find.text('Planowo'), findsNothing);
@@ -118,13 +120,16 @@ void main() {
       await tester.pumpAndSettle();
       for (final value in ['10:18', '11:18']) {
         expect(
-            tester
-                .widgetList<Text>(find.text(value))
-                .any((t) => t.style?.color == Colors.red),
+            tester.widgetList<Text>(find.text(value)).any((t) =>
+                t.style?.color ==
+                Theme.of(tester.element(find.text(value).first))
+                    .colorScheme
+                    .error),
             isTrue);
       }
       expect(tester.takeException(), isNull);
-      expect(find.textContaining('Przewidywany:'), findsOneWidget);
+      expect(find.byTooltip('Przewidywany czas podróży: 1 h 0 min'),
+          findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       state.dispose();
     });

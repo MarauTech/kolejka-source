@@ -8,6 +8,36 @@ import 'package:trainly/utils/search_utils.dart';
 import 'fixtures.dart';
 
 void main() {
+  test(
+      'Explicit route day corrects service-date timestamps without hiding real delays',
+      () {
+    const serviceDate = '2026-09-07';
+    const stampedPlan = '2026-09-07T00:01:00';
+    const correctPlan = '2026-09-08T00:01:00';
+    expect(scheduleDateTime(stampedPlan, serviceDate, day: 1),
+        DateTime(2026, 9, 8, 0, 1));
+    expect(scheduleDateTime(correctPlan, serviceDate, day: 1),
+        DateTime(2026, 9, 8, 0, 1));
+    expect(
+        timeDelay(stampedPlan, correctPlan, null,
+            operatingDate: serviceDate, day: 1),
+        0);
+    expect(
+        timeDelay(stampedPlan, '2026-09-08T00:09:00', null,
+            operatingDate: serviceDate, day: 1),
+        8);
+    expect(
+        timeDelay(stampedPlan, '2026-09-09T00:01:00', null,
+            operatingDate: serviceDate, day: 1),
+        1440);
+    expect(
+        timeDelay(stampedPlan, correctPlan, 1440,
+            operatingDate: serviceDate, day: 1),
+        1440);
+    expect(
+        timeDelay(stampedPlan, correctPlan, null, operatingDate: serviceDate),
+        1440);
+  });
   test('Missing delay is derived from full dates across midnight', () {
     expect(
         timeDelay('23:55:00', '2026-09-07T00:13:00', null,

@@ -1,7 +1,31 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_android/shared_preferences_android.dart';
+import '../models/models.dart';
 
 class CacheService {
+  static const cacheSchemaVersion = 2;
+  static const schemaKey = 'api_cache_schema_version';
+  static const maxEntryBytes = 512 * 1024;
+  static const maxPersistentBytes = 1024 * 1024;
+  static const _technical = [
+    'cache_stations',
+    'cache_carriers',
+    'cache_categories',
+    'cache_stop_types',
+    'cache_nearest_station',
+    'cache_disruptions',
+    'cache_data_version',
+  ];
+  final _memory = <String, ({Object data, DateTime savedAt})>{};
+  final _trainIndices = <String, ({List<dynamic> routes, DateTime savedAt})>{};
+
+  static bool _isTechnicalKey(String key) =>
+      _technical.contains(key) ||
+      _technical.any((name) => key == '${name}_ts') ||
+      key.startsWith(_trainIndexPrefix);
   static const _stationsKey = 'cache_stations';
   static const _carriersKey = 'cache_carriers';
   static const _categoriesKey = 'cache_categories';
@@ -32,30 +56,180 @@ class CacheService {
   late SharedPreferences _prefs;
   bool _isInitialized = false;
 
+  /// Run before legacy getInstance(): it otherwise copies every old multi-MB
+  /// train index over the platform channel before Dart can remove it.
+  static SharedPreferencesAsync androidLegacyStore() => SharedPreferencesAsync(
+        options: const SharedPreferencesAsyncAndroidOptions(
+          backend: SharedPreferencesAndroidBackendLibrary.SharedPreferences,
+          originalSharedPreferencesOptions:
+              AndroidSharedPreferencesStoreOptions(
+                  fileName: 'FlutterSharedPreferences'),
+        ),
+      );
+
+  static Future<void> migrateLegacyAndroid(SharedPreferencesAsync store) async {
+    const schema = 'flutter.$schemaKey';
+    final version = await store.getAll(allowList: {schema});
+    if (version[schema] == cacheSchemaVersion) return;
+    // Fetch names only. The large values never enter Dart or a message codec.
+    final keys = await store.getKeys();
+    final technical = keys
+        .where((key) =>
+            key.startsWith('flutter.') &&
+            _isTechnicalKey(key.substring('flutter.'.length)))
+        .toSet();
+    if (technical.isNotEmpty) await store.clear(allowList: technical);
+    await store.setInt(schema, cacheSchemaVersion);
+  }
+
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
+    if (_prefs.get(schemaKey) != cacheSchemaVersion) {
+      for (final key in _prefs.getKeys().where(_isTechnicalKey).toList()) {
+        await _prefs.remove(key);
+      }
+      await _prefs.setInt(schemaKey, cacheSchemaVersion);
+    }
     _isInitialized = true;
   }
 
-  // === Generic cache methods ===
-
-  Future<void> _saveJson(String key, String tsKey, dynamic data) async {
-    await _prefs.setString(key, jsonEncode(data));
-    await _prefs.setInt(tsKey, DateTime.now().millisecondsSinceEpoch);
+  Future<void> _remove(String key, {bool timestamp = true}) async {
+    try {
+      // Start both removals before yielding, so a fresh fetch cannot have its
+      // newly written timestamp removed by an older invalidation.
+      await Future.wait([
+        _prefs.remove(key),
+        if (timestamp) _prefs.remove('${key}_ts'),
+      ]);
+    } catch (_) {
+      if (kDebugMode) debugPrint('[Cache] Could not remove entry: $key');
+    }
   }
 
-  dynamic _loadJson(String key, String tsKey, Duration maxAge) {
-    final ts = _prefs.getInt(tsKey);
-    if (ts == null) return null;
+  T? _read<T>(String key, T Function(dynamic) parse, {Duration? maxAge}) {
+    if (!_isInitialized) return null;
+    try {
+      final memory = _memory[key];
+      if (memory != null) {
+        if (maxAge == null ||
+            DateTime.now().difference(memory.savedAt) <= maxAge) {
+          return parse(memory.data);
+        }
+        _memory.remove(key);
+      }
+      final raw = _prefs.get(key);
+      if (raw == null) return null;
+      if (maxAge != null) {
+        final ts = _prefs.get('${key}_ts');
+        if (ts is! int) throw const FormatException('Invalid cache timestamp');
+        final age =
+            DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(ts));
+        if (age.isNegative || age > maxAge) {
+          unawaited(_remove(key));
+          return null;
+        }
+      }
+      if (raw is! String) throw const FormatException('Invalid cache value');
+      return parse(jsonDecode(raw));
+    } on FormatException {
+      _memory.remove(key);
+      unawaited(_remove(key));
+    } on TypeError {
+      _memory.remove(key);
+      unawaited(_remove(key));
+    } on ArgumentError {
+      _memory.remove(key);
+      unawaited(_remove(key));
+    }
+    return null;
+  }
 
-    final age =
-        DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(ts));
-    if (age > maxAge) return null;
+  List<dynamic> _list(
+      dynamic value, void Function(Map<String, dynamic>) validate) {
+    if (value is! List) throw const FormatException('Expected list');
+    for (final item in value) {
+      if (item is! Map<String, dynamic>) {
+        throw const FormatException('Expected record');
+      }
+      validate(item);
+    }
+    return value;
+  }
 
-    final raw = _prefs.getString(key);
-    if (raw == null) return null;
+  String? _string(String key) {
+    if (!_isInitialized) return null;
+    final value = _prefs.get(key);
+    if (value is String) return value;
+    if (value != null) unawaited(_remove(key, timestamp: false));
+    return null;
+  }
 
-    return jsonDecode(raw);
+  Map<String, dynamic> _station(dynamic value) {
+    final map = value as Map<String, dynamic>;
+    if (map['id'] is! int || map['name'] is! String) {
+      throw const FormatException('Invalid station');
+    }
+    return map;
+  }
+
+  // === Generic cache methods ===
+  Future<void> saveDisruptions(Map<String, dynamic> data) async {
+    if (_isInitialized) {
+      await _saveJson('cache_disruptions', 'cache_disruptions_ts', data);
+    }
+  }
+
+  Map<String, dynamic>? loadDisruptions() {
+    if (!_isInitialized) return null;
+    // Stale data is retained for offline reading, always with its source date.
+    return _read('cache_disruptions', (value) {
+      final map = value as Map<String, dynamic>;
+      _list(map['disruptions'] ?? [], (row) {
+        Disruption.fromJson(row);
+      });
+      for (final field in ['stations', 'disruptionTypes']) {
+        if (map[field] != null && map[field] is! Map<String, dynamic>) {
+          throw const FormatException('Invalid disruption dictionary');
+        }
+      }
+      if (map['generatedAt'] != null && map['generatedAt'] is! String) {
+        throw const FormatException('Invalid snapshot date');
+      }
+      return map;
+    });
+  }
+
+  Future<void> _saveJson(String key, String tsKey, dynamic data) async {
+    final encoded = jsonEncode(data);
+    final size = utf8.encode(encoded).length;
+    if (size > maxEntryBytes) {
+      _memory[key] = (data: data as Object, savedAt: DateTime.now());
+      await _remove(key);
+      return;
+    }
+    _memory.remove(key);
+    var total = size;
+    final entries = <String>[];
+    for (final candidate in _technical) {
+      if (candidate == key) continue;
+      final value = _prefs.get(candidate);
+      if (value is String) {
+        total += utf8.encode(value).length;
+        entries.add(candidate);
+      }
+    }
+    entries.sort((a, b) {
+      final ta = _prefs.get('${a}_ts');
+      final tb = _prefs.get('${b}_ts');
+      return (ta is int ? ta : 0).compareTo(tb is int ? tb : 0);
+    });
+    for (final candidate in entries) {
+      if (total <= maxPersistentBytes) break;
+      total -= utf8.encode(_prefs.get(candidate) as String).length;
+      await _remove(candidate);
+    }
+    await _prefs.setString(key, encoded);
+    await _prefs.setInt(tsKey, DateTime.now().millisecondsSinceEpoch);
   }
 
   // === Stations ===
@@ -65,9 +239,15 @@ class CacheService {
   }
 
   List<dynamic>? loadStations() {
-    final data =
-        _loadJson(_stationsKey, _stationsTsKey, dictionaryCacheDuration);
-    return data as List<dynamic>?;
+    return _read(
+        _stationsKey,
+        (value) => _list(value, (row) {
+              final station = Station.fromJson(_station(row));
+              if (station.id <= 0 || station.name.trim().isEmpty) {
+                throw const FormatException('Invalid station model');
+              }
+            }),
+        maxAge: dictionaryCacheDuration);
   }
 
   // === Carriers ===
@@ -77,9 +257,12 @@ class CacheService {
   }
 
   List<dynamic>? loadCarriers() {
-    final data =
-        _loadJson(_carriersKey, _carriersTsKey, dictionaryCacheDuration);
-    return data as List<dynamic>?;
+    return _read(
+        _carriersKey,
+        (value) => _list(value, (row) {
+              Carrier.fromJson(row);
+            }),
+        maxAge: dictionaryCacheDuration);
   }
 
   // === Commercial Categories ===
@@ -89,9 +272,12 @@ class CacheService {
   }
 
   List<dynamic>? loadCategories() {
-    final data =
-        _loadJson(_categoriesKey, _categoriesTsKey, dictionaryCacheDuration);
-    return data as List<dynamic>?;
+    return _read(
+        _categoriesKey,
+        (value) => _list(value, (row) {
+              CommercialCategory.fromJson(row);
+            }),
+        maxAge: dictionaryCacheDuration);
   }
 
   // === Stop Types ===
@@ -101,9 +287,12 @@ class CacheService {
   }
 
   List<dynamic>? loadStopTypes() {
-    final data =
-        _loadJson(_stopTypesKey, _stopTypesTsKey, dictionaryCacheDuration);
-    return data as List<dynamic>?;
+    return _read(
+        _stopTypesKey,
+        (value) => _list(value, (row) {
+              StopType.fromJson(row);
+            }),
+        maxAge: dictionaryCacheDuration);
   }
 
   // === Data Version ===
@@ -113,7 +302,7 @@ class CacheService {
   }
 
   String? loadDataVersion() {
-    return _prefs.getString(_dataVersionKey);
+    return _string(_dataVersionKey);
   }
 
   // === Last Selected Station ===
@@ -124,13 +313,7 @@ class CacheService {
   }
 
   Map<String, dynamic>? loadLastSelectedStation() {
-    final raw = _prefs.getString(_lastSelectedStationKey);
-    if (raw == null) return null;
-    try {
-      return jsonDecode(raw) as Map<String, dynamic>?;
-    } catch (_) {
-      return null;
-    }
+    return _read(_lastSelectedStationKey, _station);
   }
 
   // === Nearest Station Cache ===
@@ -146,9 +329,8 @@ class CacheService {
   }
 
   Map<String, dynamic>? loadNearestStation() {
-    final data = _loadJson(
-        _nearestStationKey, _nearestStationTsKey, nearestStationCacheDuration);
-    return data as Map<String, dynamic>?;
+    return _read(_nearestStationKey, _station,
+        maxAge: nearestStationCacheDuration);
   }
 
   // === Favorite Stations ===
@@ -158,14 +340,7 @@ class CacheService {
   }
 
   List<Map<String, dynamic>> loadFavoriteStations() {
-    final raw = _prefs.getString(_favoriteStationsKey);
-    if (raw == null) return [];
-    try {
-      final list = jsonDecode(raw) as List<dynamic>?;
-      return list?.cast<Map<String, dynamic>>() ?? [];
-    } catch (_) {
-      return [];
-    }
+    return _preferences(_favoriteStationsKey);
   }
 
   // === Favorite Routes ===
@@ -175,14 +350,7 @@ class CacheService {
   }
 
   List<Map<String, dynamic>> loadFavoriteRoutes() {
-    final raw = _prefs.getString(_favoriteRoutesKey);
-    if (raw == null) return [];
-    try {
-      final list = jsonDecode(raw) as List<dynamic>?;
-      return list?.cast<Map<String, dynamic>>() ?? [];
-    } catch (_) {
-      return [];
-    }
+    return _preferences(_favoriteRoutesKey, routes: true);
   }
 
   Future<void> saveRecentStations(List<Map<String, dynamic>> stations) async {
@@ -191,15 +359,51 @@ class CacheService {
   }
 
   List<Map<String, dynamic>> loadRecentStations() {
-    if (!_isInitialized) return [];
-    final raw = _prefs.getString(_recentStationsKey);
-    if (raw == null) return [];
+    return _preferences(_recentStationsKey);
+  }
+
+  List<Map<String, dynamic>> _preferences(String key, {bool routes = false}) {
+    return _read(key, (value) {
+          if (value is! List) {
+            throw const FormatException('Invalid preferences');
+          }
+          final valid = <Map<String, dynamic>>[];
+          for (final item in value) {
+            if (item is! Map<String, dynamic>) continue;
+            final row = Map<String, dynamic>.from(item);
+            // A broken optional timestamp must not destroy a valid favorite.
+            if (row['savedAt'] is! String) row.remove('savedAt');
+            final idKeys = routes ? ['fromStationId', 'toStationId'] : ['id'];
+            final nameKeys =
+                routes ? ['fromStationName', 'toStationName'] : ['name'];
+            for (final field in idKeys) {
+              if (row[field] is String) {
+                row[field] = int.tryParse(row[field] as String);
+              }
+            }
+            if (idKeys.any((field) =>
+                    row[field] is! int || (row[field] as int) <= 0) ||
+                nameKeys.any((field) =>
+                    row[field] is! String ||
+                    (row[field] as String).trim().isEmpty)) {
+              continue;
+            }
+            valid.add(row);
+          }
+          if (jsonEncode(valid) != jsonEncode(value)) {
+            unawaited(_repairPreferences(key, valid));
+          }
+          return valid;
+        }) ??
+        [];
+  }
+
+  Future<void> _repairPreferences(
+      String key, List<Map<String, dynamic>> data) async {
     try {
-      return (jsonDecode(raw) as List<dynamic>? ?? const [])
-          .whereType<Map<String, dynamic>>()
-          .toList();
+      await _prefs.setString(key, jsonEncode(data));
     } catch (_) {
-      return [];
+      if (kDebugMode) debugPrint('[Cache] Could not repair entry: $key');
     }
   }
 
@@ -210,29 +414,54 @@ class CacheService {
   }
 
   String? loadThemeMode() {
-    return _prefs.getString(_themeModeKey);
+    return _string(_themeModeKey);
   }
+
+  Future<void> saveInterfaceStyle(String style) =>
+      _prefs.setString('interface_style', style);
+
+  String? loadInterfaceStyle() => _string('interface_style');
 
   // === Train Schedule Index Cache ===
 
   Future<void> saveTrainIndex(String date, List<dynamic> routes) async {
-    final key = '$_trainIndexPrefix$date';
-    await _prefs.setString(key, jsonEncode(routes));
+    // Full nationwide schedules stay in memory, bounded to two recent days.
+    _trainIndices.remove(date);
+    _trainIndices[date] = (routes: routes, savedAt: DateTime.now());
+    while (_trainIndices.length > 2) {
+      _trainIndices.remove(_trainIndices.keys.first);
+    }
   }
 
   List<dynamic>? loadTrainIndex(String date) {
-    final key = '$_trainIndexPrefix$date';
-    final raw = _prefs.getString(key);
-    if (raw == null) return null;
-    try {
-      return jsonDecode(raw) as List<dynamic>?;
-    } catch (_) {
+    final entry = _trainIndices[date];
+    if (entry == null) return null;
+    if (DateTime.now().difference(entry.savedAt) > scheduleCacheDuration) {
+      _trainIndices.remove(date);
       return null;
     }
+    try {
+      return _list(entry.routes, (row) {
+        TrainRoute.fromJson(row);
+      });
+    } on TypeError {
+      _trainIndices.remove(date);
+    } on FormatException {
+      _trainIndices.remove(date);
+    }
+    return null;
   }
 
   /// Clear dictionary caches (when data version changes)
   Future<void> clearDictionaryCache() async {
+    for (final key in [
+      _stationsKey,
+      _carriersKey,
+      _categoriesKey,
+      _stopTypesKey
+    ]) {
+      _memory.remove(key);
+    }
     await _prefs.remove(_stationsKey);
     await _prefs.remove(_stationsTsKey);
     await _prefs.remove(_carriersKey);
@@ -243,8 +472,12 @@ class CacheService {
     await _prefs.remove(_stopTypesTsKey);
   }
 
-  /// Clear all caches
+  /// Clear technical caches without erasing user preferences.
   Future<void> clearAll() async {
-    await _prefs.clear();
+    _memory.clear();
+    _trainIndices.clear();
+    for (final key in _prefs.getKeys().where(_isTechnicalKey).toList()) {
+      await _prefs.remove(key);
+    }
   }
 }

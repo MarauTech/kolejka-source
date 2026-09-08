@@ -1,4 +1,32 @@
-﻿# Historia zmian
+# Historia zmian
+
+## 2.0.0-beta.1 — Beta 2.0 — 2026-09-08
+
+- Wydanie obejmuje wszystkie poprawki interfejsu i stabilności opisane w Beta 4–6, w tym połączenia na kolejne dni, nowy wybór stacji, zieloną oś trasy oraz godziny dodania utrudnień, gdy źródło je udostępnia.
+- Publiczna dystrybucja aplikacji i strona pobierania są oddzielone od prywatnego repozytorium kodu źródłowego.
+- Instalator Androida jest podpisany dotychczasowym kluczem wydawniczym i zawiera zaciemniony kod produkcyjny.
+- Naprawiono odczyt uszkodzonego cache i migrację dużych starych indeksów na Androidzie bez utraty ulubionych. Ograniczono rozmiar cache w pamięci i ustawieniach.
+- Tablica łączy rozkład z operacjami, zachowuje cały dzień i różne kursy tego samego numeru. Status sieci pokazuje udziały rozłącznych kategorii, sumujące się do 100,0%.
+- Dodano nowy jasny motyw, opcjonalny Liquid Glass z ograniczeniem efektów na wolniejszych urządzeniach i panele wyboru daty oraz godziny w stylu iOS.
+- Przebudowano szczegóły pociągu i zieloną oś trasy. Wyszukiwarka stacji dopasowuje początek nazwy, a utrudnienia rozwiązują opisy ze słownika źródła.
+
+## 1.0.0-beta.6 — 2026-09-07
+
+- Gwiazdka zapisywania trasy znajduje się przy wybranych stacjach. Połączenia można dociągać na kolejne dni i rozwijać po osiem; dni rozdziela data między liniami.
+- Oś przebiegu pociągu jest ciągła i zielona, z wyraźnymi punktami stacji. Pulsowanie odświeża wyłącznie rysunek osi, również przy pozycji szacowanej.
+- Pobieranie kolejnych dni nie przypisuje dzisiejszych opóźnień do jutrzejszych pociągów. Tablica nie pomija dnia z powodu pojedynczego nocnego kursu i pozwala przejść przez dni bez nowych wyników.
+- Wyniki połączeń mają poziomą oś podróży: duże godziny odjazdu i przyjazdu, czas przejazdu pomiędzy nimi oraz status przy numerze pociągu. Trasa i termin są zebrane w jednym nagłówku z przyciskiem „Zmień”.
+- Dzień stacji zapisany w rozkładzie koryguje planowe godziny nocnego kursu oznaczone przez źródło datą wyjazdu; usuwa to fałszywe opóźnienie o całą dobę.
+- Wybór stacji ma większe pola dotykowe, skrót do lokalizacji, uporządkowane ulubione i ostatnie stacje oraz przypięte wyszukiwanie nad klawiaturą. Pełne nazwy i trafienia od początku nazwy mają pierwszeństwo w wynikach.
+- Zmiana stacji natychmiast przełącza powiązaną z nią tablicę; błąd sieci nie pozostawia pociągów poprzedniej stacji pod nowym nagłówkiem.
+- Poprawiono wybór godziny w polskim trybie 24-godzinnym, oznaczenie ujemnego opóźnienia i kolejność połączeń uwzględniającą rzeczywisty odjazd.
+- Trwała odmowa GPS prowadzi do ustawień Androida, a powrót z ustawień aktualizuje status. Poprawiono układ uprawnień przy 320 dp oraz opis korzystania z lokalizacji.
+- Utrudnienia zachowują rozwiniętą listę po zmianie rozmiaru ekranu. Duże listy korzystają ze wspólnego rozkładu zamiast osobnego zapytania o każdy pociąg.
+- Utrudnienia można ponownie otworzyć z pamięci podręcznej. Nieudane odświeżenie tej samej trasy, tablicy lub szczegółów pociągu zachowuje dostępne dane i pokazuje ostrzeżenie o ich aktualności.
+- Uzupełniane są brakujące metadane tablicy. Gdy brakuje godziny planowej, widoczna pozostaje dostępna godzina rzeczywista.
+- Błędy źródła, w tym limit zapytań, mają czytelne komunikaty. Poprawiono oznaczenia kategorii pociągów oraz marginesy pustych ulubionych.
+- Poprawiono czas zwalniania pola wyszukiwania po zamknięciu wyboru stacji, co usuwa błąd formularza przy zmianie rozmiaru ekranu.
+- Dodano testy regresji oraz scenariusze pasażera uruchamiane na emulatorze Androida.
 
 ## 1.0.0-beta.5 — 2026-09-07
 

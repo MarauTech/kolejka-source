@@ -39,7 +39,7 @@ class _FavoritesScreenState extends State<FavoritesScreen>
 
     appState.selectManualStation(station);
     if (widget.onNavigateToTab != null) {
-      widget.onNavigateToTab!(0); // Switch to Tablica tab
+      widget.onNavigateToTab!(1); // Switch to Tablica tab
     }
   }
 
@@ -95,29 +95,31 @@ class _FavoritesScreenState extends State<FavoritesScreen>
         children: [
           // Favorite Stations list
           appState.favoriteStations.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.star_outline,
-                          size: 56, color: theme.colorScheme.outlineVariant),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Brak ulubionych stacji',
-                        style: TextStyle(
-                            fontSize: 16,
-                            color: theme.colorScheme.onSurfaceVariant),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Kliknij ikonę gwiazdki na tablicy stacyjnej, aby dodać stację.',
-                        style: TextStyle(
-                            fontSize: 13, color: theme.colorScheme.outline),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                )
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.star_outline,
+                            size: 56, color: theme.colorScheme.outlineVariant),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Brak ulubionych stacji',
+                          style: TextStyle(
+                              fontSize: 16,
+                              color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Kliknij ikonę gwiazdki na tablicy stacyjnej, aby dodać stację.',
+                          style: TextStyle(
+                              fontSize: 13, color: theme.colorScheme.outline),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ))
               : ListView.separated(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   itemCount: appState.favoriteStations.length,
@@ -152,29 +154,31 @@ class _FavoritesScreenState extends State<FavoritesScreen>
 
           // Favorite Routes list
           appState.favoriteRoutes.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.route_outlined,
-                          size: 56, color: theme.colorScheme.outlineVariant),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Brak ulubionych tras',
-                        style: TextStyle(
-                            fontSize: 16,
-                            color: theme.colorScheme.onSurfaceVariant),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Wyszukaj połączenie i kliknij gwiazdkę w nagłówku, aby zapisać trasę.',
-                        style: TextStyle(
-                            fontSize: 13, color: theme.colorScheme.outline),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                )
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.route_outlined,
+                            size: 56, color: theme.colorScheme.outlineVariant),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Brak ulubionych tras',
+                          style: TextStyle(
+                              fontSize: 16,
+                              color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Wyszukaj połączenie i kliknij gwiazdkę w nagłówku, aby zapisać trasę.',
+                          style: TextStyle(
+                              fontSize: 13, color: theme.colorScheme.outline),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ))
               : ListView.separated(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   itemCount: appState.favoriteRoutes.length,

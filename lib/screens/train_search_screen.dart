@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import '../widgets/journey_picker.dart';
 import 'package:provider/provider.dart';
 import '../app_state.dart';
+import '../api/api_client.dart';
 import '../models/models.dart';
 import '../utils/category_utils.dart';
 import '../utils/date_utils.dart' as app_date;
@@ -21,6 +23,17 @@ class _TrainSearchScreenState extends State<TrainSearchScreen>
   List<TrainSearchResult> _results = [];
   bool _hasSearched = false;
   String? _errorMessage;
+  int _request = 0;
+
+  void _queryChanged() {
+    setState(() {
+      _request++;
+      _isSearching = false;
+      _hasSearched = false;
+      _results = [];
+      _errorMessage = null;
+    });
+  }
 
   @override
   bool get wantKeepAlive => true;
@@ -54,20 +67,23 @@ class _TrainSearchScreenState extends State<TrainSearchScreen>
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
+    final picked = await showJourneyPicker(
       context: context,
-      initialDate: _selectedDate,
+      initial: _selectedDate,
       firstDate: DateTime(now.year, now.month, now.day)
           .subtract(const Duration(days: 1)),
       lastDate:
           DateTime(now.year, now.month, now.day).add(const Duration(days: 30)),
     );
-    if (picked != null) {
-      setState(() => _selectedDate = picked);
+    if (mounted && picked != null) {
+      _selectedDate = picked;
+      _queryChanged();
     }
   }
 
   Future<void> _searchTrain() async {
+    if (_isSearching) return;
+    FocusManager.instance.primaryFocus?.unfocus();
     final query = _numberController.text.trim();
     if (query.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -76,6 +92,7 @@ class _TrainSearchScreenState extends State<TrainSearchScreen>
       return;
     }
 
+    final request = ++_request;
     setState(() {
       _isSearching = true;
       _hasSearched = true;
@@ -86,19 +103,23 @@ class _TrainSearchScreenState extends State<TrainSearchScreen>
     try {
       final res =
           await appState.searchTrainByNumber(query, date: _selectedDate);
-      if (mounted) {
+      if (mounted && request == _request) {
         setState(() {
           _results = res;
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && request == _request) {
         setState(() {
-          _errorMessage = 'Błąd podczas wyszukiwania pociągu: $e';
+          _errorMessage = e is ApiException && e.statusCode == 429
+              ? 'Źródło rozkładów jest chwilowo przeciążone. Spróbuj ponownie za minutę.'
+              : e is ApiException && e.isConnectionError
+                  ? 'Brak połączenia z internetem. Sprawdź połączenie i spróbuj ponownie.'
+                  : 'Nie udało się wyszukać pociągu. Spróbuj ponownie.';
         });
       }
     } finally {
-      if (mounted) {
+      if (mounted && request == _request) {
         setState(() => _isSearching = false);
       }
     }
@@ -140,7 +161,7 @@ class _TrainSearchScreenState extends State<TrainSearchScreen>
                                 icon: const Icon(Icons.clear, size: 20),
                                 onPressed: () {
                                   _numberController.clear();
-                                  setState(() {});
+                                  _queryChanged();
                                 },
                               )
                             : null,
@@ -150,7 +171,7 @@ class _TrainSearchScreenState extends State<TrainSearchScreen>
                       ),
                       textInputAction: TextInputAction.search,
                       onSubmitted: (_) => _searchTrain(),
-                      onChanged: (_) => setState(() {}),
+                      onChanged: (_) => _queryChanged(),
                     ),
                     const SizedBox(height: 12),
                     Row(
@@ -220,9 +241,10 @@ class _TrainSearchScreenState extends State<TrainSearchScreen>
             else if (_errorMessage != null)
               Expanded(
                 child: Center(
-                  child: Padding(
+                  child: SingleChildScrollView(
                     padding: const EdgeInsets.all(24.0),
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(Icons.error_outline,
@@ -287,6 +309,8 @@ class _TrainSearchScreenState extends State<TrainSearchScreen>
                           Navigator.push(
                             context,
                             MaterialPageRoute(
+                              settings: const RouteSettings(
+                                  name: 'Szczegóły pociągu'),
                               builder: (context) => TrainDetailsScreen(
                                 result: ConnectionResult(
                                   route: item.route,

@@ -1,4 +1,4 @@
-﻿name: Publish GitHub Pages
+name: Validate download website
 on:
   push:
     branches: [main]
@@ -19,26 +19,13 @@ jobs:
           node-version: '22.23.2'
           cache: npm
           cache-dependency-path: website/package-lock.json
-      - uses: actions/configure-pages@v5
       - run: npm ci
         working-directory: website
       - run: npm run lint
         working-directory: website
       - run: npm run build
         working-directory: website
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
+          name: download-website
           path: website/dist/client
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v4

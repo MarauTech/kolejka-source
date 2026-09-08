@@ -70,7 +70,8 @@ class RouteStopWidget extends StatelessWidget {
                         : scheduleData.departureDay) !=
                 null);
     final suffix = delay >= 0 ? '+$delay' : '$delay';
-    final color = delay > 0 ? Colors.red : theme.colorScheme.onSurface;
+    final color =
+        delay > 0 ? theme.colorScheme.error : theme.colorScheme.onSurface;
     final label = arrival ? 'Przyjazd' : 'Odjazd';
     return Semantics(
       label: delayKnown
@@ -79,44 +80,31 @@ class RouteStopWidget extends StatelessWidget {
       child: Tooltip(
         message: '$label · Planowo ${app_date.formatTimeSafe(planned)}',
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 1),
-          child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Text(arrival ? 'Prz.' : 'Odj.',
-                        style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w500,
-                            color: theme.colorScheme.onSurfaceVariant)),
-                    const SizedBox(width: 3),
-                    Text(display,
-                        key: ValueKey(
-                            'route-time-$index-${arrival ? 'arrival' : 'departure'}'),
-                        style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: color,
-                            fontFeatures: const [
-                              FontFeature.tabularFigures()
-                            ])),
-                    if (delayKnown) ...[
-                      const SizedBox(width: 4),
-                      Text(suffix,
-                          style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: delay > 0
-                                  ? Colors.red
-                                  : theme.brightness == Brightness.dark
-                                      ? const Color(0xFF83C998)
-                                      : const Color(0xFF26743D))),
-                    ],
-                  ])),
+          padding: const EdgeInsets.only(bottom: 7),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(arrival ? 'Przyjazd' : 'Odjazd',
+                style: TextStyle(
+                    fontSize: 10, color: theme.colorScheme.onSurfaceVariant)),
+            Text(display,
+                key: ValueKey(
+                    'route-time-$index-${arrival ? 'arrival' : 'departure'}'),
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                    fontFeatures: const [FontFeature.tabularFigures()])),
+            if (delayKnown && delay != 0) ...[
+              Text(app_date.formatTimeSafe(planned),
+                  style: TextStyle(
+                      fontSize: 11,
+                      decoration: TextDecoration.lineThrough,
+                      color: theme.colorScheme.onSurfaceVariant)),
+              Text('$suffix min',
+                  style: TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+            ],
+          ]),
         ),
       ),
     );
@@ -128,15 +116,17 @@ class RouteStopWidget extends StatelessWidget {
     final active = hasTrainNow || isBetweenNext || isHighlighted;
     final foreground = theme.colorScheme.onSurface;
     final muted = theme.colorScheme.onSurfaceVariant;
-    final primary = theme.colorScheme.primary;
-    final normalLine = theme.colorScheme.outline;
+    final primary = theme.brightness == Brightness.dark
+        ? const Color(0xFF62CB91)
+        : const Color(0xFF25804A);
+    final normalLine = primary.withValues(alpha: 0.45);
     final pastLine = theme.colorScheme.outlineVariant;
     final topLine = isBetweenNext
         ? primary
         : isPassed
             ? pastLine
             : normalLine;
-    final bottomLine = (hasTrainNow || isTrainAtPrevious)
+    final bottomLine = isTrainAtPrevious
         ? primary
         : isPassed
             ? pastLine
@@ -160,7 +150,8 @@ class RouteStopWidget extends StatelessWidget {
         realtimeData?.actualDeparture);
     final showArrival = arrival && (!isFirst || !departure || isLast);
     final showDeparture = departure && (!isLast || !arrival);
-    final dotSize = active ? 9.0 : 7.0;
+    final stationActive = hasTrainNow || isHighlighted;
+    final dotSize = stationActive ? 10.0 : 8.0;
 
     return IntrinsicHeight(
         child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -185,12 +176,12 @@ class RouteStopWidget extends StatelessWidget {
         pastLine: pastLine,
         surface: theme.colorScheme.surface,
         activeColor: primary,
-        active: active,
+        active: stationActive,
         isPassed: isPassed,
         dotSize: dotSize,
         pulseSegment: pulseSegment,
         pulseStation: pulseStation,
-        isEstimatedPosition: isEstimatedPosition,
+        pulseIncoming: isBetweenNext,
         animation: pulseAnimation,
       ),
       Expanded(
@@ -276,23 +267,13 @@ class RouteStopWidget extends StatelessWidget {
   }
 }
 
-/// Only this small axis fragment repaints while the current position pulses.
+/// One geometry and one green palette for both halves of each connection.
+/// The painter listens to animation directly; station rows do not rebuild.
 class _RouteAxis extends StatelessWidget {
-  final bool isFirst;
-  final bool isLast;
-  final bool startsVisibleRoute;
-  final Color topLine;
-  final Color bottomLine;
-  final Color normalLine;
-  final Color pastLine;
-  final Color surface;
-  final Color activeColor;
-  final bool active;
-  final bool isPassed;
+  final bool isFirst, isLast, startsVisibleRoute, active, isPassed;
+  final bool pulseSegment, pulseStation, pulseIncoming;
+  final Color topLine, bottomLine, normalLine, pastLine, surface, activeColor;
   final double dotSize;
-  final bool pulseSegment;
-  final bool pulseStation;
-  final bool isEstimatedPosition;
   final Animation<double>? animation;
 
   const _RouteAxis({
@@ -311,58 +292,116 @@ class _RouteAxis extends StatelessWidget {
     required this.dotSize,
     required this.pulseSegment,
     required this.pulseStation,
-    required this.isEstimatedPosition,
+    required this.pulseIncoming,
     required this.animation,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final shouldPulse = (pulseSegment || pulseStation) && animation != null;
-    final positionColor =
-        isEstimatedPosition ? Colors.amber.shade700 : Colors.green;
-    Widget axis(double opacity) {
-      final pulseColor = positionColor.withValues(alpha: .45 + .45 * opacity);
-      final lineColor = pulseSegment ? pulseColor : bottomLine;
-      final dotColor = pulseStation
-          ? pulseColor
-          : active
-              ? activeColor
-              : surface;
-      return SizedBox(
-          width: 20,
-          child: Stack(alignment: Alignment.topCenter, children: [
-            if (!isFirst && !startsVisibleRoute)
-              Positioned(
-                  top: 0,
-                  height: 21,
-                  child: Container(width: 1.5, color: topLine)),
-            if (!isLast)
-              Positioned(
-                  top: 21,
-                  bottom: 0,
-                  child: Container(width: 1.5, color: lineColor)),
-            Positioned(
-                top: 21 - dotSize / 2,
-                child: Container(
-                    width: dotSize,
-                    height: dotSize,
-                    decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: dotColor,
-                        border: Border.all(
-                            color: active || pulseStation
-                                ? dotColor
-                                : isPassed
-                                    ? pastLine
-                                    : normalLine,
-                            width: 1.5)))),
-          ]));
+  Widget build(BuildContext context) => SizedBox(
+      width: 24,
+      child: RepaintBoundary(
+          child: CustomPaint(
+              painter: _RouteAxisPainter(
+                  topVisible: !isFirst && !startsVisibleRoute,
+                  bottomVisible: !isLast,
+                  topLine: topLine,
+                  bottomLine: bottomLine,
+                  dotColor: active
+                      ? activeColor
+                      : isPassed
+                          ? pastLine
+                          : normalLine,
+                  surface: surface,
+                  green: activeColor,
+                  active: active,
+                  filled: active || isPassed,
+                  dotSize: dotSize,
+                  pulseTop: pulseIncoming,
+                  pulseBottom: pulseSegment,
+                  pulseDot: pulseStation,
+                  animation: (pulseIncoming || pulseSegment || pulseStation)
+                      ? animation
+                      : null))));
+}
+
+class _RouteAxisPainter extends CustomPainter {
+  final bool topVisible, bottomVisible, active, filled;
+  final bool pulseTop, pulseBottom, pulseDot;
+  final Color topLine, bottomLine, dotColor, surface, green;
+  final double dotSize;
+  final Animation<double>? animation;
+
+  _RouteAxisPainter({
+    required this.topVisible,
+    required this.bottomVisible,
+    required this.topLine,
+    required this.bottomLine,
+    required this.dotColor,
+    required this.surface,
+    required this.green,
+    required this.active,
+    required this.filled,
+    required this.dotSize,
+    required this.pulseTop,
+    required this.pulseBottom,
+    required this.pulseDot,
+    required this.animation,
+  }) : super(repaint: animation);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, 21);
+    final pulse = animation?.value ?? 0.5;
+    void segment(Offset start, Offset end, Color color, bool highlighted) {
+      if (highlighted) {
+        canvas.drawLine(
+            start,
+            end,
+            Paint()
+              ..color = green.withValues(alpha: 0.08 + pulse * 0.10)
+              ..strokeWidth = 7);
+      }
+      canvas.drawLine(
+          start,
+          end,
+          Paint()
+            ..color = color
+            ..strokeWidth = 2.5);
     }
 
-    if (!shouldPulse) return axis(0);
-    return AnimatedBuilder(
-      animation: animation!,
-      builder: (context, _) => axis(animation!.value),
-    );
+    if (topVisible) segment(Offset(center.dx, 0), center, topLine, pulseTop);
+    if (bottomVisible) {
+      segment(center, Offset(center.dx, size.height), bottomLine, pulseBottom);
+    }
+    if (active) {
+      canvas.drawCircle(center, 8 + (pulseDot ? pulse : 0),
+          Paint()..color = green.withValues(alpha: 0.15));
+    }
+    canvas.drawCircle(
+        center, dotSize / 2, Paint()..color = filled ? dotColor : surface);
+    canvas.drawCircle(
+        center,
+        dotSize / 2,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..color = dotColor);
   }
+
+  @override
+  bool shouldRepaint(_RouteAxisPainter old) =>
+      topVisible != old.topVisible ||
+      bottomVisible != old.bottomVisible ||
+      topLine != old.topLine ||
+      bottomLine != old.bottomLine ||
+      dotColor != old.dotColor ||
+      surface != old.surface ||
+      green != old.green ||
+      active != old.active ||
+      filled != old.filled ||
+      dotSize != old.dotSize ||
+      pulseTop != old.pulseTop ||
+      pulseBottom != old.pulseBottom ||
+      pulseDot != old.pulseDot ||
+      animation != old.animation;
 }

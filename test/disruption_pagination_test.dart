@@ -45,6 +45,12 @@ void main() {
       await tester.ensureVisible(more);
       await tester.tap(more);
       await tester.pumpAndSettle();
+      if (page == 0) {
+        tester.view.physicalSize = const Size(960, 1800);
+        addTearDown(tester.view.resetPhysicalSize);
+        await tester.pumpAndSettle();
+        expect(find.text('Wyświetlono 40 z 96'), findsOneWidget);
+      }
     }
     expect(find.text('Wyświetlono 96 z 96'), findsOneWidget);
     expect(

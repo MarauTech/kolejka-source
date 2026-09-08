@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../app_state.dart';
@@ -6,7 +5,7 @@ import '../models/models.dart';
 import '../utils/category_utils.dart';
 import '../utils/format_utils.dart';
 import '../utils/date_utils.dart' as app_date;
-import '../utils/search_utils.dart';
+import '../widgets/station_picker.dart';
 import '../widgets/train_type_icon.dart';
 import 'train_details_screen.dart';
 
@@ -43,138 +42,24 @@ class _StationScreenState extends State<StationScreen>
   }
 
   Future<void> _openStationPicker(AppState appState) async {
-    final controller = TextEditingController();
-    var query = '';
-    var filteredQuery = '';
-    Timer? debounce;
-    await showModalBottomSheet<void>(
+    final station = await showModalBottomSheet<Station>(
+      routeSettings: const RouteSettings(name: 'Wybierz stację'),
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) {
-          final normalized = normalizeStationQuery(filteredQuery);
-          final results = normalized.isEmpty
-              ? const <Station>[]
-              : appState.stations
-                  .where((station) =>
-                      normalizeStationQuery(station.name).contains(normalized))
-                  .take(20)
-                  .toList();
-          final favoriteStations = appState.favoriteStations
-              .map((favorite) => Station(id: favorite.id, name: favorite.name))
-              .toList();
-
-          Widget stationTile(Station station, {String? subtitle}) => ListTile(
-                dense: true,
-                leading: Icon(Icons.location_on_outlined,
-                    color: Theme.of(context).colorScheme.primary),
-                title: Text(station.name,
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: subtitle == null ? null : Text(subtitle),
-                onTap: () {
-                  appState.selectManualStation(station);
-                  Navigator.pop(sheetContext);
-                },
-              );
-          Widget section(String title, List<Station> stations,
-              {String? subtitle}) {
-            if (stations.isEmpty) return const SizedBox.shrink();
-            return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-                      child: Text(title,
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelLarge
-                              ?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                  fontWeight: FontWeight.w700))),
-                  ...stations.map(
-                      (station) => stationTile(station, subtitle: subtitle)),
-                ]);
-          }
-
-          return SafeArea(
-            top: false,
-            child: SizedBox(
-              height: MediaQuery.sizeOf(context).height * .78,
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-                        child: Text('Wybierz stację',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
-                                ?.copyWith(fontWeight: FontWeight.bold))),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: TextField(
-                        controller: controller,
-                        autofocus: true,
-                        decoration: InputDecoration(
-                          hintText: 'Wyszukaj stację',
-                          prefixIcon: const Icon(Icons.search),
-                          suffixIcon: query.isEmpty
-                              ? null
-                              : IconButton(
-                                  tooltip: 'Wyczyść',
-                                  onPressed: () {
-                                    controller.clear();
-                                    debounce?.cancel();
-                                    setSheetState(() {
-                                      query = '';
-                                      filteredQuery = '';
-                                    });
-                                  },
-                                  icon: const Icon(Icons.clear)),
-                          border: const OutlineInputBorder(),
-                        ),
-                        onChanged: (value) {
-                          setSheetState(() => query = value);
-                          debounce?.cancel();
-                          debounce =
-                              Timer(const Duration(milliseconds: 250), () {
-                            if (sheetContext.mounted) {
-                              setSheetState(() => filteredQuery = value);
-                            }
-                          });
-                        },
-                      ),
-                    ),
-                    Expanded(
-                      child: ListView(children: [
-                        if (normalized.isEmpty) ...[
-                          if (appState.isStationFromGps &&
-                              appState.currentStation != null)
-                            section(
-                                'Najbliższa stacja', [appState.currentStation!],
-                                subtitle: 'Ustalona na podstawie GPS'),
-                          section('Ostatnio używane', appState.recentStations),
-                          section('Ulubione', favoriteStations),
-                        ] else ...[
-                          section('Wyniki wyszukiwania', results),
-                          if (results.isEmpty)
-                            const Padding(
-                                padding: EdgeInsets.all(24),
-                                child: Text('Nie znaleziono stacji')),
-                        ],
-                      ]),
-                    ),
-                  ]),
-            ),
-          );
-        },
+      useSafeArea: true,
+      showDragHandle: false,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      builder: (_) => StationPicker(
+        onUseLocation: () => appState.detectNearestStation(forceRefresh: true),
       ),
     );
-    debounce?.cancel();
-    controller.dispose();
+    if (mounted && station != null) {
+      await appState.selectManualStation(station);
+    }
   }
 
   String? _formatPlatformTrack(String? platform, String? track) {
@@ -244,10 +129,10 @@ class _StationScreenState extends State<StationScreen>
 
   Widget _buildDelayStatus(int? delay, bool isCancelled, ThemeData theme) {
     if (isCancelled) {
-      return const Text(
+      return Text(
         'Odwołany',
         style: TextStyle(
-          color: Colors.red,
+          color: theme.colorScheme.error,
           fontWeight: FontWeight.bold,
           fontSize: 11,
         ),
@@ -266,10 +151,12 @@ class _StationScreenState extends State<StationScreen>
     }
 
     if (delay == 0) {
-      return const Text(
-        '+0',
+      return Text(
+        'Planowo',
         style: TextStyle(
-          color: Colors.green,
+          color: (theme.brightness == Brightness.dark
+              ? const Color(0xFF83C998)
+              : const Color(0xFF26743D)),
           fontWeight: FontWeight.w600,
           fontSize: 11,
         ),
@@ -277,9 +164,13 @@ class _StationScreenState extends State<StationScreen>
     }
 
     return Text(
-      '+$delay',
-      style: const TextStyle(
-        color: Colors.red,
+      delay > 0 ? '+$delay' : '$delay',
+      style: TextStyle(
+        color: delay > 0
+            ? theme.colorScheme.error
+            : (theme.brightness == Brightness.dark
+                ? const Color(0xFF83C998)
+                : const Color(0xFF26743D)),
         fontWeight: FontWeight.bold,
         fontSize: 11,
       ),
@@ -318,7 +209,7 @@ class _StationScreenState extends State<StationScreen>
   String _boardDateLabel(List<StationBoardItem> items, DateTime now) {
     DateTime date = now;
     if (items.isNotEmpty) {
-      date = DateTime.tryParse(items.first.operatingDate) ?? now;
+      date = _itemDateTime(items.first);
     }
     final day = DateTime(date.year, date.month, date.day);
     final today = DateTime(now.year, now.month, now.day);
@@ -543,6 +434,16 @@ class _StationScreenState extends State<StationScreen>
               ),
             ],
           ),
+          if (appState.stationBoardError != null &&
+              (appState.stationDepartures.isNotEmpty ||
+                  appState.stationArrivals.isNotEmpty))
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                  '${appState.stationBoardError} Wyświetlam zapisane dane; mogą być nieaktualne.',
+                  style:
+                      TextStyle(fontSize: 12, color: theme.colorScheme.error)),
+            ),
         ],
       ),
     );
@@ -614,6 +515,20 @@ class _StationScreenState extends State<StationScreen>
                     color: theme.colorScheme.onSurfaceVariant, fontSize: 15),
               ),
             ),
+            if (appState.stationBoardCanLoadMore)
+              Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: OutlinedButton.icon(
+                      key: ValueKey(isArrival
+                          ? 'show-more-arrivals'
+                          : 'show-more-departures'),
+                      onPressed: appState.isStationBoardLoadingMore
+                          ? null
+                          : appState.loadNextStationBoardDay,
+                      icon: const Icon(Icons.expand_more),
+                      label: Text(appState.isStationBoardLoadingMore
+                          ? 'Wczytywanie kolejnego dnia…'
+                          : 'Sprawdź kolejny dzień'))),
           ],
         ),
       );
@@ -645,7 +560,9 @@ class _StationScreenState extends State<StationScreen>
         padding: const EdgeInsets.fromLTRB(14, 7, 14, 6),
         color: theme.colorScheme.surfaceContainerLow,
         child: Text(
-          _boardDateLabel(sortedItems, now),
+          _boardDateLabel(
+              showPast || upcomingItems.isEmpty ? sortedItems : visibleUpcoming,
+              now),
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w600,
@@ -712,7 +629,9 @@ class _StationScreenState extends State<StationScreen>
         key:
             ValueKey(isArrival ? 'show-more-arrivals' : 'show-more-departures'),
         label: appState.isStationBoardLoadingMore
-            ? 'Ładowanie kolejnych odjazdów...'
+            ? (isArrival
+                ? 'Ładowanie kolejnych przyjazdów...'
+                : 'Ładowanie kolejnych odjazdów...')
             : remaining > 0
                 ? isArrival
                     ? 'Pokaż kolejne przyjazdy ($remaining)'
@@ -764,64 +683,63 @@ class _StationScreenState extends State<StationScreen>
     final hasDelay = item.delayMinutes != null && item.delayMinutes! > 0;
     final isCancelled = item.isCancelled;
 
-    final mainTime = hasDelay
-        ? (item.actualTime ?? item.time)
-        : (item.plannedTime ?? item.time);
-    final struckTime = hasDelay ? item.plannedTime : null;
+    final planned = app_date.formatTimeSafe(item.plannedTime);
+    final observed = app_date.formatTimeSafe(item.actualTime ?? item.time);
+    final mainTime = hasDelay || planned == '--:--' ? observed : planned;
+    final struckTime = hasDelay && planned != '--:--' ? planned : null;
 
-    final timeColor =
-        isCancelled || hasDelay ? Colors.red : theme.colorScheme.onSurface;
+    final timeColor = isCancelled || hasDelay
+        ? theme.colorScheme.error
+        : theme.colorScheme.onSurface;
     final catTextColor = categoryTextColor(item.trainCategory, isDark: isDark);
 
     return Opacity(
-      opacity: isPastItem ? 0.65 : 1.0,
+      opacity: 1.0,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: () {
-            Future.delayed(const Duration(milliseconds: 50), () {
-              if (!mounted) return;
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => TrainDetailsScreen(
-                    result: ConnectionResult(
-                      route: TrainRoute(
-                        scheduleId: item.scheduleId,
-                        orderId: item.orderId,
-                        nationalNumber: item.trainNumber,
-                        name: item.trainName,
-                        commercialCategorySymbol: item.trainCategory,
-                        operatingDates: [item.operatingDate],
-                        stations: [],
-                        connections: [],
-                        raw: item.raw,
-                      ),
-                      fromStop: StationOnRoute(
-                        stationId: appState.currentStation!.id,
-                        orderNumber: 1,
-                        departureTime: item.time,
-                        raw: {},
-                      ),
-                      toStop: StationOnRoute(
-                        stationId: 0,
-                        orderNumber: 2,
-                        raw: {},
-                      ),
-                      fromStationName: isArrival
-                          ? item.direction
-                          : appState.currentStation!.name,
-                      toStationName: isArrival
-                          ? appState.currentStation!.name
-                          : item.direction,
-                      carrierName: item.carrier,
-                      commercialCategory: item.trainCategory,
-                      operatingDate: item.operatingDate,
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                settings: const RouteSettings(name: 'Szczegóły pociągu'),
+                builder: (context) => TrainDetailsScreen(
+                  result: ConnectionResult(
+                    route: TrainRoute(
+                      scheduleId: item.scheduleId,
+                      orderId: item.orderId,
+                      nationalNumber: item.trainNumber,
+                      name: item.trainName,
+                      commercialCategorySymbol: item.trainCategory,
+                      operatingDates: [item.operatingDate],
+                      stations: [],
+                      connections: [],
+                      raw: item.raw,
                     ),
+                    fromStop: StationOnRoute(
+                      stationId: appState.currentStation!.id,
+                      orderNumber: 1,
+                      departureTime: item.time,
+                      raw: {},
+                    ),
+                    toStop: StationOnRoute(
+                      stationId: 0,
+                      orderNumber: 2,
+                      raw: {},
+                    ),
+                    fromStationName: isArrival
+                        ? item.direction
+                        : appState.currentStation!.name,
+                    toStationName: isArrival
+                        ? appState.currentStation!.name
+                        : item.direction,
+                    carrierName: item.carrier,
+                    commercialCategory: item.trainCategory,
+                    operatingDate: item.operatingDate,
                   ),
                 ),
-              );
-            });
+              ),
+            );
           },
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),

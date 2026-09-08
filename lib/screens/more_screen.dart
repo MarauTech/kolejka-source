@@ -45,6 +45,7 @@ class MoreScreen extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
+                    settings: const RouteSettings(name: 'Wygląd'),
                     builder: (context) => const AppearanceScreen()),
               );
             },
@@ -64,6 +65,7 @@ class MoreScreen extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
+                    settings: const RouteSettings(name: 'Uprawnienia'),
                     builder: (context) => const PermissionsScreen()),
               );
             },
@@ -95,6 +97,7 @@ class MoreScreen extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
+                    settings: const RouteSettings(name: 'Utrudnienia'),
                     builder: (context) => const DisruptionsScreen()),
               );
             },
@@ -115,6 +118,7 @@ class MoreScreen extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
+                    settings: const RouteSettings(name: 'Status sieci'),
                     builder: (context) => const StatisticsScreen()),
               );
             },
@@ -135,6 +139,8 @@ class MoreScreen extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
+                    settings:
+                        const RouteSettings(name: 'Usługa i źródło danych'),
                     builder: (context) => const DataSourceScreen()),
               );
             },
@@ -163,7 +169,9 @@ class MoreScreen extends StatelessWidget {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const AboutScreen()),
+                MaterialPageRoute(
+                    settings: const RouteSettings(name: 'O aplikacji'),
+                    builder: (context) => const AboutScreen()),
               );
             },
           ),

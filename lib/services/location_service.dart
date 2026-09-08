@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 
 enum LocationPermissionStatus {
@@ -29,6 +30,7 @@ class NearestStationResult {
 
 class LocationService {
   final Dio _dio;
+  static const _denialKey = 'location_permission_permanently_denied';
 
   LocationService({Dio? dio})
       : _dio = dio ??
@@ -50,12 +52,19 @@ class LocationService {
       }
 
       final permission = await Geolocator.checkPermission();
+      final preferences = await SharedPreferences.getInstance();
       switch (permission) {
         case LocationPermission.always:
         case LocationPermission.whileInUse:
+          if (preferences.getBool(_denialKey) == true) {
+            await preferences.setBool(_denialKey, false);
+          }
           return LocationPermissionStatus.granted;
         case LocationPermission.denied:
-          return LocationPermissionStatus.denied;
+          // Android exposes a permanent denial only from requestPermission.
+          return preferences.getBool(_denialKey) == true
+              ? LocationPermissionStatus.permanentlyDenied
+              : LocationPermissionStatus.denied;
         case LocationPermission.deniedForever:
           return LocationPermissionStatus.permanentlyDenied;
         case LocationPermission.unableToDetermine:
@@ -79,6 +88,9 @@ class LocationService {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setBool(
+          _denialKey, permission == LocationPermission.deniedForever);
 
       switch (permission) {
         case LocationPermission.always:

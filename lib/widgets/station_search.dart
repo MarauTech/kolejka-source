@@ -73,19 +73,16 @@ class _StationSearchFieldState extends State<StationSearchField> {
 
         final query = normalizeStationQuery(textEditingValue.text);
         final startsWithList = <Station>[];
-        final containsList = <Station>[];
 
         for (final station in widget.stations) {
           final sName = normalizeStationQuery(station.name);
           if (sName.startsWith(query)) {
             startsWithList.add(station);
-          } else if (sName.contains(query)) {
-            containsList.add(station);
           }
-          if (startsWithList.length + containsList.length >= 25) break;
+          if (startsWithList.length >= 20) break;
         }
 
-        return [...startsWithList, ...containsList].take(20);
+        return startsWithList;
       },
       onSelected: (Station selection) {
         widget.onStationSelected(selection);
@@ -113,6 +110,17 @@ class _StationSearchFieldState extends State<StationSearchField> {
                 ? const OutlineInputBorder(
                     borderRadius: BorderRadius.all(Radius.circular(10)))
                 : const UnderlineInputBorder(),
+            enabledBorder: widget.marker == null
+                ? null
+                : UnderlineInputBorder(
+                    borderSide:
+                        BorderSide(color: theme.colorScheme.outlineVariant)),
+            focusedBorder: widget.marker == null
+                ? null
+                : UnderlineInputBorder(
+                    borderSide: BorderSide(
+                        color: theme.colorScheme.primary, width: 1.5)),
+            fillColor: widget.marker == null ? null : Colors.transparent,
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             helperText: controller.text.trim().isNotEmpty && !_queryHasMatch
@@ -138,7 +146,7 @@ class _StationSearchFieldState extends State<StationSearchField> {
             final query = normalizeStationQuery(value);
             final hasMatch = query.isEmpty ||
                 widget.stations.any((station) =>
-                    normalizeStationQuery(station.name).contains(query));
+                    normalizeStationQuery(station.name).startsWith(query));
             if (hasMatch != _queryHasMatch) {
               setState(() => _queryHasMatch = hasMatch);
             } else {

@@ -6,26 +6,39 @@ import '../utils/date_utils.dart' as app_date;
 import '../utils/format_utils.dart';
 import 'train_type_icon.dart';
 
-/// Compact connection row, sharing the visual rhythm of the station board.
+/// A compact journey timeline with equally prominent departure and arrival.
 class TrainCard extends StatelessWidget {
   final ConnectionResult connection;
   final VoidCallback onTap;
   const TrainCard({super.key, required this.connection, required this.onTap});
-  Widget _time(String planned, String? actual, int delay, bool cancelled,
-      {double fontSize = 17}) {
+  Widget _time(BuildContext context, String label, String planned,
+      String? actual, int delay, bool cancelled,
+      {bool alignRight = false}) {
     final display = app_date.delayedTime(planned, actual, delay);
     final original = app_date.formatTimeSafe(planned);
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(display,
-          style: TextStyle(
-              fontSize: fontSize,
-              fontWeight: FontWeight.bold,
-              color: delay > 0 || cancelled ? Colors.red : null)),
-      if (display != original && original != '--:--')
-        Text(original,
-            style: const TextStyle(
-                fontSize: 11, decoration: TextDecoration.lineThrough)),
-    ]);
+    final secondary = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Semantics(
+        label: label,
+        child: Column(
+            crossAxisAlignment:
+                alignRight ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: [
+              Text(display,
+                  style: TextStyle(
+                      fontSize: 24,
+                      height: 1.2,
+                      fontWeight: FontWeight.w700,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      color: delay > 0 || cancelled
+                          ? Theme.of(context).colorScheme.error
+                          : null)),
+              if (display != original && original != '--:--')
+                Text(original,
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: secondary,
+                        decoration: TextDecoration.lineThrough)),
+            ]));
   }
 
   @override
@@ -80,22 +93,28 @@ class TrainCard extends StatelessWidget {
       departureDay: c.fromStop.departureDay,
       arrivalDay: lastLeg.toStop.arrivalDay,
     );
-    final durationText = effectiveDuration.isNotEmpty
-        ? '${hasRealtime ? 'Przewidywany' : 'Planowo'}: $effectiveDuration'
-        : c.duration.isNotEmpty
-            ? 'Planowo: ${c.duration}'
-            : '';
+    final durationText =
+        effectiveDuration.isNotEmpty ? effectiveDuration : c.duration;
+    final durationDescription =
+        '${hasRealtime ? 'Przewidywany czas podróży' : 'Rozkładowy czas podróży'}: $durationText';
+    final connectionType = c.isDirect
+        ? 'Bezpośredni'
+        : c.transfersCount == 1
+            ? '1 przesiadka'
+            : '${c.transfersCount} przesiadki';
     final statusText = cancelled
         ? 'Odwołany'
         : delay > 0
             ? app_date.formatDelay(delay)
             : hasRealtime
-                ? 'Planowo'
+                ? app_date.formatDelay(delay)
                 : 'Wg rozkładu';
     final statusColor = cancelled || delay > 0
-        ? Colors.red
+        ? theme.colorScheme.error
         : hasRealtime
-            ? Colors.green
+            ? dark
+                ? const Color(0xFF83C998)
+                : const Color(0xFF26743D)
             : theme.colorScheme.onSurfaceVariant;
     Widget identity(ConnectionResult leg) {
       final category =
@@ -106,7 +125,7 @@ class TrainCard extends StatelessWidget {
           runSpacing: 5,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            TrainTypeIcon(category: category, size: 24, color: color),
+            TrainTypeIcon(category: category, size: 20, color: color),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
               decoration: BoxDecoration(
@@ -126,107 +145,149 @@ class TrainCard extends StatelessWidget {
             if (leg.trainName.isNotEmpty)
               Text(leg.trainName,
                   style: TextStyle(
-                      fontSize: 11, color: theme.colorScheme.onSurfaceVariant)),
+                      fontSize: 12, color: theme.colorScheme.onSurfaceVariant)),
           ]);
     }
 
+    Widget duration() => Tooltip(
+        message: durationDescription,
+        child: Semantics(
+            label: durationDescription,
+            excludeSemantics: true,
+            child: Text(durationText,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w600))));
+
+    final secondaryStyle =
+        TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant);
     return Material(
         color: theme.colorScheme.surface,
         child: InkWell(
           onTap: onTap,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
             decoration: BoxDecoration(
                 border: Border(
                     bottom: BorderSide(
                         color: theme.colorScheme.outlineVariant, width: 0.6))),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                SizedBox(
-                    width: 58,
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Semantics(
-                              label: 'Odjazd',
-                              child: _time(c.departureTime,
-                                  dep?.actualDeparture, depDelay, cancelled)),
-                          Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 3),
-                              child: Icon(Icons.south,
-                                  size: 11, color: theme.colorScheme.outline)),
-                          Semantics(
-                              label: 'Przyjazd',
-                              child: _time(c.arrivalTime, arr?.actualArrival,
-                                  arrDelay, cancelled,
-                                  fontSize: 14)),
-                        ])),
-                const SizedBox(width: 10),
-                Expanded(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                      identity(c),
-                      const SizedBox(height: 6),
-                      Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(Icons.arrow_forward,
-                                size: 14, color: theme.colorScheme.outline),
-                            const SizedBox(width: 5),
-                            Expanded(
-                                child: Text(c.toStationName,
-                                    style: const TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600))),
-                          ]),
-                      if (c.secondLeg != null) ...[
-                        const SizedBox(height: 6),
-                        Text('Przesiadka: ${lastLeg.fromStationName}',
+              Row(children: [
+                Expanded(child: identity(c)),
+                const SizedBox(width: 8),
+                ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 112),
+                    child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 4),
+                        decoration: BoxDecoration(
+                            color: statusColor.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(6)),
+                        child: Text(statusText,
                             style: TextStyle(
                                 fontSize: 11,
-                                color: theme.colorScheme.onSurfaceVariant)),
-                        const SizedBox(height: 4),
-                        identity(lastLeg),
-                      ],
-                      const SizedBox(height: 6),
-                      Text(statusText,
-                          style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: statusColor)),
-                    ])),
+                                fontWeight: FontWeight.w600,
+                                color: statusColor)))),
+                const SizedBox(width: 4),
                 Icon(Icons.chevron_right,
                     size: 16, color: theme.colorScheme.outline),
               ]),
-              const SizedBox(height: 8),
-              Text(
-                  [
-                    if (durationText.isNotEmpty) durationText,
-                    c.isDirect
-                        ? 'Bezpośredni'
-                        : c.transfersCount == 1
-                            ? '1 przesiadka'
-                            : '${c.transfersCount} przesiadki',
-                  ].join(' · '),
-                  style: TextStyle(
-                      fontSize: 11, color: theme.colorScheme.onSurfaceVariant)),
+              const SizedBox(height: 12),
+              LayoutBuilder(builder: (context, constraints) {
+                final largeText =
+                    MediaQuery.textScalerOf(context).scale(1) > 1.3;
+                final inlineDuration =
+                    !largeText && constraints.maxWidth >= 264;
+                return Column(children: [
+                  ExcludeSemantics(
+                      child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                        Expanded(child: Text('Odjazd', style: secondaryStyle)),
+                        const SizedBox(width: 12),
+                        Expanded(
+                            child: Text('Przyjazd',
+                                textAlign: TextAlign.end,
+                                style: secondaryStyle)),
+                      ])),
+                  const SizedBox(height: 2),
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Expanded(
+                        flex: 3,
+                        child: _time(context, 'Odjazd', c.departureTime,
+                            dep?.actualDeparture, depDelay, cancelled)),
+                    if (inlineDuration)
+                      Expanded(
+                          flex: 4,
+                          child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 10),
+                              child: Column(children: [
+                                if (durationText.isNotEmpty) duration(),
+                                Row(children: [
+                                  Expanded(
+                                      child: Divider(
+                                          color: theme
+                                              .colorScheme.outlineVariant)),
+                                  Icon(Icons.arrow_forward,
+                                      size: 14,
+                                      color: theme.colorScheme.outline),
+                                ]),
+                                Text(connectionType,
+                                    textAlign: TextAlign.center,
+                                    style: secondaryStyle),
+                              ])))
+                    else
+                      Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                          child: Icon(Icons.arrow_forward,
+                              size: 18, color: theme.colorScheme.outline)),
+                    Expanded(
+                        flex: 3,
+                        child: _time(context, 'Przyjazd', c.arrivalTime,
+                            arr?.actualArrival, arrDelay, cancelled,
+                            alignRight: true)),
+                  ]),
+                  if (!inlineDuration)
+                    Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Wrap(
+                            spacing: 12,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              if (durationText.isNotEmpty) duration(),
+                              Text(connectionType, style: secondaryStyle),
+                            ])),
+                ]);
+              }),
               if (platform != null || arrivalPlatform != null)
                 Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Wrap(spacing: 12, runSpacing: 3, children: [
-                      if (platform != null)
-                        Text('Odj. $platform',
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: theme.colorScheme.onSurfaceVariant)),
-                      if (arrivalPlatform != null)
-                        Text('Przyj. $arrivalPlatform',
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: theme.colorScheme.onSurfaceVariant)),
-                    ])),
+                    padding: const EdgeInsets.only(top: 7),
+                    child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                              child: Text(
+                                  platform != null ? 'Odj. $platform' : '',
+                                  style: secondaryStyle)),
+                          const SizedBox(width: 12),
+                          Expanded(
+                              child: Text(
+                                  arrivalPlatform != null
+                                      ? 'Przyj. $arrivalPlatform'
+                                      : '',
+                                  textAlign: TextAlign.end,
+                                  style: secondaryStyle)),
+                        ])),
+              if (c.secondLeg != null) ...[
+                const SizedBox(height: 10),
+                Text('Przesiadka: ${lastLeg.fromStationName}',
+                    style: secondaryStyle),
+                const SizedBox(height: 5),
+                identity(lastLeg),
+              ],
             ]),
           ),
         ));

@@ -1,10 +1,10 @@
-﻿# Dane i prywatność w Kolejce BETA
+# Dane i prywatność w Kolejce BETA
 
-Stan opisu: 7 września 2026, wersja 1.0.0-beta.3. Opis dotyczy obecnego kodu aplikacji.
+Stan opisu: 7 września 2026, Beta 2.0 (2.0.0-beta.1). Opis dotyczy obecnego kodu aplikacji.
 
 ## Dane przechowywane lokalnie
 
-Ulubione stacje i trasy, wybrany motyw, ostatnia stacja oraz pamięć podręczna słowników są przechowywane na urządzeniu przez SharedPreferences. Aplikacja nie wymaga konta i nie ma własnego mechanizmu synchronizacji ulubionych z serwerem. Ustawienia kopii zapasowej Androida mogą działać niezależnie od aplikacji.
+Ulubione stacje i trasy, wybrany motyw, ostatnio używane stacje, stan trwałej odmowy lokalizacji oraz pamięć podręczna słowników, rozkładów i utrudnień są przechowywane na urządzeniu przez SharedPreferences. Aplikacja nie wymaga konta i nie ma własnego mechanizmu synchronizacji ulubionych z serwerem. Ustawienia kopii zapasowej Androida mogą działać niezależnie od aplikacji.
 
 ## Połączenia sieciowe
 

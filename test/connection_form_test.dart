@@ -42,6 +42,8 @@ void main() {
     expect(find.byType(ConnectionResults), findsOneWidget);
     await tester.tap(find.byTooltip('Zmień trasę lub termin'));
     await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Zamień stacje'));
+    await tester.pumpAndSettle();
     state.pending = Completer<List<ConnectionResult>>();
     await tester.tap(find.text('Wyszukaj połączenia'));
     await tester.pump();

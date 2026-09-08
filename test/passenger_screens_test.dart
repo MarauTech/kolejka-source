@@ -11,6 +11,7 @@ import 'package:trainly/screens/station_screen.dart';
 import 'package:trainly/screens/statistics_screen.dart';
 import 'package:trainly/utils/date_utils.dart';
 import 'package:trainly/widgets/train_card.dart';
+import 'package:trainly/widgets/journey_picker.dart';
 import 'fixtures.dart';
 
 void main() {
@@ -87,6 +88,14 @@ void main() {
       expect(find.text('Odj. Per. IV/3'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await show(const SearchScreen());
+      final displayedTime = tester
+          .widgetList<JourneyField>(find.byType(JourneyField))
+          .singleWhere((field) => field.label == 'Godzina')
+          .value;
+      final displayedDate = tester
+          .widgetList<JourneyField>(find.byType(JourneyField))
+          .singleWhere((field) => field.label == 'Data')
+          .value;
       await tester.drag(
           find.byType(SingleChildScrollView), const Offset(0, -500));
       await tester.pumpAndSettle();
@@ -96,8 +105,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(state.searchedFrom?.id, 1);
       expect(state.searchedTo?.id, 2);
-      expect(state.searchedDate, today());
-      expect(state.searchedTime, TimeOfDay.fromDateTime(DateTime.now()));
+      expect(formatDateDisplay(state.searchedDate!), displayedDate);
+      expect(
+          formatTimeDisplay(
+              state.searchedTime!.hour, state.searchedTime!.minute),
+          displayedTime);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       state.dispose();
@@ -156,9 +168,11 @@ void main() {
       expect(find.text('Per. IV/3'), findsWidgets);
       final delayed = state.stationDepartures.last.time;
       expect(
-          tester
-              .widgetList<Text>(find.text(delayed))
-              .any((t) => t.style?.color == Colors.red),
+          tester.widgetList<Text>(find.text(delayed)).any((t) =>
+              t.style?.color ==
+              Theme.of(tester.element(find.byType(StationScreen)))
+                  .colorScheme
+                  .error),
           isTrue);
       expect(tester.takeException(), isNull);
       expect(find.byType(ErrorWidget), findsNothing);

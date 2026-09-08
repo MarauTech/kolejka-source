@@ -28,8 +28,11 @@ class ResultsScreen extends StatefulWidget {
 class _ResultsScreenState extends State<ResultsScreen> {
   bool _showPastConnections = false;
   void _openDetails(ConnectionResult result) {
-    Navigator.push(context,
-        MaterialPageRoute(builder: (_) => TrainDetailsScreen(result: result)));
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+            settings: const RouteSettings(name: 'Szczegóły pociągu'),
+            builder: (_) => TrainDetailsScreen(result: result)));
   }
 
   void _searchFavoriteRoute(FavoriteRoute fav) {

@@ -5,10 +5,26 @@ import 'api/api_client.dart';
 import 'api/plk_api.dart';
 import 'models/models.dart';
 import 'services/cache_service.dart';
+import 'services/bounded_cache.dart';
 import 'services/location_service.dart';
 import 'utils/date_utils.dart' as app_date;
 
 class AppState extends ChangeNotifier {
+  bool _disposed = false;
+  bool _clientInitialized = false;
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    if (_clientInitialized) _apiClient.close();
+    super.dispose();
+  }
+
   late final ApiClient _apiClient;
   late final PlkApi api;
   late final CacheService cache;
@@ -40,26 +56,35 @@ class AppState extends ChangeNotifier {
 
   // Theme
   ThemeMode themeMode = ThemeMode.system;
+  bool liquidGlass = false;
 
   bool isLoading = false;
   String? error;
   bool _initialized = false;
+  bool _servicesReady = false;
+  Map<String, dynamic>? _cachedDisruptions;
+  DateTime? _disruptionsLoadedAt;
+  Map<String, dynamic>? get cachedDisruptions => _cachedDisruptions;
 
   int? get hourlyRemaining => _apiClient.hourlyRemaining;
   int? get dailyRemaining => _apiClient.dailyRemaining;
 
   Future<void> init() async {
     _apiClient = ApiClient();
+    _clientInitialized = true;
     api = PlkApi(_apiClient);
     cache = CacheService();
     await cache.init();
     locationService = LocationService();
+    _servicesReady = true;
+    _cachedDisruptions = cache.loadDisruptions();
 
     _loadThemeMode();
     _loadFavorites();
   }
 
   void _loadThemeMode() {
+    liquidGlass = cache.loadInterfaceStyle() == 'glass';
     final savedMode = cache.loadThemeMode();
     if (savedMode != null) {
       if (savedMode == 'light') themeMode = ThemeMode.light;
@@ -72,6 +97,12 @@ class AppState extends ChangeNotifier {
     themeMode = mode;
     await cache.saveThemeMode(mode.name);
     notifyListeners();
+  }
+
+  Future<void> setLiquidGlass(bool enabled) async {
+    liquidGlass = enabled;
+    notifyListeners();
+    await cache.saveInterfaceStyle(enabled ? 'glass' : 'classic');
   }
 
   void _loadFavorites() {
@@ -353,6 +384,7 @@ class AppState extends ChangeNotifier {
       if (selectionVersion != _stationSelectionVersion) return;
       if (nearestResult != null) {
         currentStation = nearestResult.station;
+        _activateStationBoard(nearestResult.station.id);
         isStationFromGps = true;
         await cache.saveNearestStation(
           nearestResult.station.id,
@@ -377,6 +409,7 @@ class AppState extends ChangeNotifier {
   Future<void> selectManualStation(Station station) async {
     _stationSelectionVersion++;
     currentStation = station;
+    _activateStationBoard(station.id);
     isStationFromGps = false;
     locationMessage = null;
     await cache.saveLastSelectedStation(station.id, station.name);
@@ -386,13 +419,49 @@ class AppState extends ChangeNotifier {
   }
 
   // Memory cache for station board data to avoid rapid re-fetches
-  final Map<int, Map<String, dynamic>> _stationBoardOpsCache = {};
-  final Map<int, DateTime> _stationBoardOpsCacheTime = {};
-  final Map<int, Map<String, dynamic>> _stationBoardSchedCache = {};
-  final Map<int, DateTime> _stationBoardSchedCacheTime = {};
-  final Map<String, Map<String, dynamic>> _stationBoardScheduleDayCache = {};
+  final _stationBoardOpsCache = BoundedCache<int, Map<String, dynamic>>(3);
+  final _stationBoardOpsCacheTime = BoundedCache<int, DateTime>(3);
+  final _stationBoardSchedCache = BoundedCache<int, Map<String, dynamic>>(3);
+  final _stationBoardSchedCacheTime = BoundedCache<int, DateTime>(3);
+  final _stationBoardScheduleDayCache =
+      BoundedCache<String, Map<String, dynamic>>(6);
   final Map<String, Future<void>> _stationBoardMoreInFlight = {};
+  final _stationBoardLoadedThrough = BoundedCache<int, DateTime>(64);
   int _stationBoardLoadGeneration = 0;
+  int? _boardStationId;
+  final Map<
+      int,
+      ({
+        List<StationBoardItem> departures,
+        List<StationBoardItem> arrivals,
+        DateTime? updated,
+        bool canLoadMore
+      })> _boardsByStation = BoundedCache(3);
+
+  void _saveBoardSnapshot() {
+    if (_boardStationId case final id?) {
+      _boardsByStation[id] = (
+        departures: [...stationDepartures],
+        arrivals: [...stationArrivals],
+        updated: stationBoardLastUpdated,
+        canLoadMore: stationBoardCanLoadMore
+      );
+    }
+  }
+
+  void _activateStationBoard(int stationId) {
+    if (_boardStationId == stationId) return;
+    _saveBoardSnapshot();
+    _boardStationId = stationId;
+    _stationBoardLoadGeneration++;
+    final saved = _boardsByStation[stationId];
+    stationDepartures = [...?saved?.departures];
+    stationArrivals = [...?saved?.arrivals];
+    stationBoardLastUpdated = saved?.updated;
+    stationBoardCanLoadMore = saved?.canLoadMore ?? true;
+    stationBoardError = null;
+    isStationBoardLoadingMore = false;
+  }
 
   DateTime _boardItemDateTime(StationBoardItem item) {
     return app_date.scheduleDateTime(
@@ -411,8 +480,10 @@ class AppState extends ChangeNotifier {
 
   /// Load departures and arrivals for station board
   Future<void> loadStationBoard(int stationId) async {
+    _activateStationBoard(stationId);
     final requestGeneration = ++_stationBoardLoadGeneration;
     isStationBoardLoading = true;
+    isStationBoardLoadingMore = false;
     stationBoardCanLoadMore = true;
     stationBoardError = null;
     notifyListeners();
@@ -425,7 +496,9 @@ class AppState extends ChangeNotifier {
       Map<String, dynamic>? schedResponse;
 
       final opsTime = _stationBoardOpsCacheTime[stationId];
-      if (opsTime != null && now.difference(opsTime).inSeconds < 30) {
+      if (opsTime != null &&
+          DateUtils.isSameDay(opsTime, now) &&
+          now.difference(opsTime).inSeconds < 30) {
         opsResponse = _stationBoardOpsCache[stationId];
         if (kDebugMode) {
           debugPrint('[PDP] cache HIT operations for station $stationId');
@@ -433,7 +506,9 @@ class AppState extends ChangeNotifier {
       }
 
       final schedTime = _stationBoardSchedCacheTime[stationId];
-      if (schedTime != null && now.difference(schedTime).inMinutes < 15) {
+      if (schedTime != null &&
+          DateUtils.isSameDay(schedTime, now) &&
+          now.difference(schedTime).inMinutes < 15) {
         schedResponse = _stationBoardSchedCache[stationId];
         if (kDebugMode) {
           debugPrint('[PDP] cache HIT schedules for station $stationId');
@@ -463,6 +538,8 @@ class AppState extends ChangeNotifier {
       late Future<Map<String, dynamic>> schedFuture;
       if (schedResponse == null) {
         schedFuture = api.getSchedules(
+          dateFrom: app_date.formatDateForApi(now),
+          dateTo: app_date.formatDateForApi(now),
           stations: stationId.toString(),
           fullRoute: true,
         );
@@ -496,6 +573,42 @@ class AppState extends ChangeNotifier {
         scheduleData['${schedId}_$ordId'] = route;
       }
 
+      // An operation can be published before the station's bulk schedule is
+      // updated. Resolve only missing, currently relevant routes by identity.
+      final missingRoutes = <String, TrainOperation>{};
+      for (final raw in rawTrains.whereType<Map<String, dynamic>>()) {
+        final operation = TrainOperation.fromJson(raw);
+        final key = '${operation.scheduleId}_${operation.orderId}';
+        if (scheduleData.containsKey(key)) continue;
+        if (operation.stations.any((stop) {
+          if (stop.stationId != stationId) return false;
+          return [
+            stop.actualDeparture,
+            stop.plannedDeparture,
+            stop.actualArrival,
+            stop.plannedArrival
+          ].any((time) {
+            final value = app_date.parsePdpDateTime(time);
+            return value != null &&
+                !value.isBefore(now.subtract(const Duration(hours: 1))) &&
+                value.isBefore(now.add(const Duration(days: 1)));
+          });
+        })) {
+          missingRoutes[key] = operation;
+        }
+      }
+      final missing = missingRoutes.entries.toList();
+      for (var start = 0; start < missing.length; start += 4) {
+        await Future.wait(missing.skip(start).take(4).map((entry) async {
+          try {
+            scheduleData[entry.key] = await getScheduleRoute(
+                entry.value.scheduleId, entry.value.orderId,
+                operatingDate: entry.value.operatingDate);
+          } catch (_) {/* Preserve the available operation times. */}
+        }));
+      }
+      if (requestGeneration != _stationBoardLoadGeneration) return;
+
       final List<StationBoardItem> departures = [];
       final List<StationBoardItem> arrivals = [];
 
@@ -511,12 +624,14 @@ class AppState extends ChangeNotifier {
         String? arrPlatform;
         String? depTrack;
         String? arrTrack;
+        Map<String, dynamic>? scheduleStop;
 
         if (sched != null && sched['stations'] != null) {
           final stations = sched['stations'] as List<dynamic>;
           for (final st in stations) {
             final stationMap = st as Map<String, dynamic>;
             if (stationMap['stationId'] == stationId) {
+              scheduleStop = stationMap;
               depTrainNum = stationMap['departureTrainNumber'] as String?;
               arrTrainNum = stationMap['arrivalTrainNumber'] as String?;
               depPlatform = stationMap['departurePlatform'] as String? ??
@@ -547,8 +662,25 @@ class AppState extends ChangeNotifier {
         for (int i = 0; i < op.stations.length; i++) {
           final st = op.stations[i];
           if (st.stationId == stationId) {
-            final depTime = st.actualDeparture ?? st.plannedDeparture;
-            final arrTime = st.actualArrival ?? st.plannedArrival;
+            String? planned(String? live, String field, String dayField) {
+              final value = app_date.parsePdpDateTime(live) ??
+                  app_date.scheduleDateTime(
+                      scheduleStop?[field]?.toString(), op.operatingDate,
+                      day: (scheduleStop?[dayField] as num?)?.toInt());
+              return value?.toIso8601String();
+            }
+
+            final plannedDeparture =
+                planned(st.plannedDeparture, 'departureTime', 'departureDay');
+            final plannedArrival =
+                planned(st.plannedArrival, 'arrivalTime', 'arrivalDay');
+            final actualDeparture = app_date
+                .parsePdpDateTime(st.actualDeparture)
+                ?.toIso8601String();
+            final actualArrival =
+                app_date.parsePdpDateTime(st.actualArrival)?.toIso8601String();
+            final depTime = actualDeparture ?? plannedDeparture;
+            final arrTime = actualArrival ?? plannedArrival;
 
             // Destination station (last stop)
             String destination = 'Nieznana stacja';
@@ -580,11 +712,13 @@ class AppState extends ChangeNotifier {
                 ? st.track
                 : arrTrack;
 
-            // Filter out trains departed > 60 minutes ago
+            // Keep today's earlier trains available for the expandable section.
             if (depTime != null && i < op.stations.length - 1) {
               final depDt = DateTime.tryParse(depTime)?.toLocal();
-              final isOld =
-                  depDt != null && now.difference(depDt).inMinutes > 60;
+              final isOld = depDt == null ||
+                  depDt.isBefore(DateUtils.dateOnly(now)) ||
+                  (!DateUtils.isSameDay(depDt, now) &&
+                      op.operatingDate != app_date.formatDateForApi(now));
 
               if (!isOld) {
                 departures.add(StationBoardItem(
@@ -594,7 +728,12 @@ class AppState extends ChangeNotifier {
                   trainCategory: catSymbol,
                   carrier: carrierName,
                   direction: destination,
-                  delayMinutes: st.departureDelayMinutes,
+                  delayMinutes: st.departureDelayMinutes ??
+                      (actualDeparture != null && plannedDeparture != null
+                          ? app_date.timeDelay(
+                              plannedDeparture, actualDeparture, null,
+                              operatingDate: op.operatingDate)
+                          : null),
                   isCancelled: st.isCancelled || op.trainStatus == 'X',
                   status: op.statusText,
                   scheduleId: op.scheduleId,
@@ -602,10 +741,8 @@ class AppState extends ChangeNotifier {
                   operatingDate: op.operatingDate,
                   platform: effectiveDepPlatform,
                   track: effectiveDepTrack,
-                  plannedTime: app_date.formatDateTime(st.plannedDeparture),
-                  actualTime: st.actualDeparture != null
-                      ? app_date.formatDateTime(st.actualDeparture)
-                      : null,
+                  plannedTime: plannedDeparture,
+                  actualTime: actualDeparture,
                   raw: op.raw,
                 ));
               }
@@ -614,8 +751,10 @@ class AppState extends ChangeNotifier {
             // Arrivals
             if (arrTime != null && i > 0) {
               final arrDt = DateTime.tryParse(arrTime)?.toLocal();
-              final isOld =
-                  arrDt != null && now.difference(arrDt).inMinutes > 60;
+              final isOld = arrDt == null ||
+                  arrDt.isBefore(DateUtils.dateOnly(now)) ||
+                  (!DateUtils.isSameDay(arrDt, now) &&
+                      op.operatingDate != app_date.formatDateForApi(now));
 
               if (!isOld) {
                 arrivals.add(StationBoardItem(
@@ -625,7 +764,12 @@ class AppState extends ChangeNotifier {
                   trainCategory: catSymbol,
                   carrier: carrierName,
                   direction: origin,
-                  delayMinutes: st.arrivalDelayMinutes,
+                  delayMinutes: st.arrivalDelayMinutes ??
+                      (actualArrival != null && plannedArrival != null
+                          ? app_date.timeDelay(
+                              plannedArrival, actualArrival, null,
+                              operatingDate: op.operatingDate)
+                          : null),
                   isCancelled: st.isCancelled || op.trainStatus == 'X',
                   status: op.statusText,
                   scheduleId: op.scheduleId,
@@ -633,10 +777,8 @@ class AppState extends ChangeNotifier {
                   operatingDate: op.operatingDate,
                   platform: effectiveArrPlatform,
                   track: effectiveArrTrack,
-                  plannedTime: app_date.formatDateTime(st.plannedArrival),
-                  actualTime: st.actualArrival != null
-                      ? app_date.formatDateTime(st.actualArrival)
-                      : null,
+                  plannedTime: plannedArrival,
+                  actualTime: actualArrival,
                   raw: op.raw,
                 ));
               }
@@ -645,13 +787,22 @@ class AppState extends ChangeNotifier {
         }
       }
 
+      _appendScheduledBoardItems(
+          Station(id: stationId, name: getStationName(stationId)),
+          DateUtils.dateOnly(now),
+          schedResponse!,
+          departures,
+          arrivals);
       stationDepartures = departures;
       stationArrivals = arrivals;
       _sortBoardItems();
       stationBoardLastUpdated = DateTime.now();
+      _stationBoardLoadedThrough[stationId] = DateUtils.dateOnly(now);
+      _saveBoardSnapshot();
     } catch (e) {
       if (requestGeneration == _stationBoardLoadGeneration) {
-        stationBoardError = 'Błąd podczas pobierania danych tablicy stacyjnej';
+        stationBoardError =
+            'Nie udało się odświeżyć tablicy. Spróbuj ponownie.';
       }
       debugPrint('[AppState] loadStationBoard error: $e');
     } finally {
@@ -662,23 +813,112 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  void _appendScheduledBoardItems(
+      Station station,
+      DateTime date,
+      Map<String, dynamic> response,
+      List<StationBoardItem> departures,
+      List<StationBoardItem> arrivals) {
+    final routes = response['routes'] as List<dynamic>? ?? const [];
+    final knownDepartures = {
+      for (final item in departures)
+        '${item.scheduleId}/${item.orderId}/${item.operatingDate}/d'
+    };
+    final knownArrivals = {
+      for (final item in arrivals)
+        '${item.scheduleId}/${item.orderId}/${item.operatingDate}/a'
+    };
+    for (final rawRoute in routes.whereType<Map<String, dynamic>>()) {
+      final operatingDates = rawRoute['operatingDates'];
+      if (operatingDates is List &&
+          !operatingDates.contains(app_date.formatDateForApi(date))) {
+        continue;
+      }
+      final scheduleId = (rawRoute['scheduleId'] as num?)?.toInt() ?? 0;
+      final orderId = (rawRoute['orderId'] as num?)?.toInt() ?? 0;
+      final routeStations = rawRoute['stations'] as List<dynamic>? ?? const [];
+      if (routeStations.isEmpty) continue;
+      final first = routeStations.first as Map<String, dynamic>;
+      final last = routeStations.last as Map<String, dynamic>;
+      final category = rawRoute['commercialCategorySymbol']?.toString() ?? '';
+      final carrierCode = rawRoute['carrierCode']?.toString() ?? '';
+      final carrier = carrierNames[carrierCode] ?? carrierCode;
+      final name = rawRoute['name']?.toString() ?? '';
+      for (final rawStop in routeStations.whereType<Map<String, dynamic>>()) {
+        if ((rawStop['stationId'] as num?)?.toInt() != station.id) continue;
+        StationBoardItem makeItem({required bool arrival}) {
+          final time =
+              (arrival ? rawStop['arrivalTime'] : rawStop['departureTime'])
+                  ?.toString();
+          final platform = (arrival
+                      ? rawStop['arrivalPlatform']
+                      : rawStop['departurePlatform'])
+                  ?.toString() ??
+              rawStop['platform']?.toString();
+          final track =
+              (arrival ? rawStop['arrivalTrack'] : rawStop['departureTrack'])
+                      ?.toString() ??
+                  rawStop['track']?.toString();
+          final number = (arrival
+                      ? rawStop['arrivalTrainNumber']
+                      : rawStop['departureTrainNumber'])
+                  ?.toString() ??
+              rawRoute['nationalNumber']?.toString() ??
+              '';
+          return StationBoardItem(
+            time: app_date.formatTimeSafe(time),
+            trainNumber: number,
+            trainName: name,
+            trainCategory: category,
+            carrier: carrier,
+            direction: getStationName(
+                ((arrival ? first : last)['stationId'] as num?)?.toInt() ?? 0),
+            scheduleId: scheduleId,
+            orderId: orderId,
+            operatingDate: app_date.formatDateForApi(date),
+            platform: platform,
+            track: track,
+            plannedTime: app_date
+                .scheduleDateTime(time, app_date.formatDateForApi(date),
+                    day: (rawStop[arrival ? 'arrivalDay' : 'departureDay']
+                            as num?)
+                        ?.toInt())
+                ?.toIso8601String(),
+            raw: rawRoute,
+          );
+        }
+
+        if (rawStop['departureTime'] != null) {
+          final item = makeItem(arrival: false);
+          if (knownDepartures
+              .add('$scheduleId/$orderId/${item.operatingDate}/d')) {
+            departures.add(item);
+          }
+        }
+        if (rawStop['arrivalTime'] != null) {
+          final item = makeItem(arrival: true);
+          if (knownArrivals
+              .add('$scheduleId/$orderId/${item.operatingDate}/a')) {
+            arrivals.add(item);
+          }
+        }
+      }
+    }
+  }
+
   /// Lazily append one operating day of schedule data to the station board.
   /// Operations are deliberately not fetched for tomorrow: they are real-time
   /// data for the current day and would only increase API traffic.
   Future<void> loadNextStationBoardDay() async {
     final station = currentStation;
-    if (station == null || isStationBoardLoadingMore) return;
-    final latest = [...stationDepartures, ...stationArrivals]
-        .map(_boardItemDateTime)
-        .fold<DateTime?>(
-            null,
-            (latest, value) =>
-                latest == null || value.isAfter(latest) ? value : latest);
-    final date = DateTime(
-            latest?.year ?? DateTime.now().year,
-            latest?.month ?? DateTime.now().month,
-            latest?.day ?? DateTime.now().day)
-        .add(const Duration(days: 1));
+    if (station == null ||
+        isStationBoardLoadingMore ||
+        !stationBoardCanLoadMore) {
+      return;
+    }
+    // A live overnight train is not proof that its whole day was fetched.
+    final date = DateUtils.addDaysToDate(
+        _stationBoardLoadedThrough[station.id] ?? DateTime.now(), 1);
     final dateKey = app_date.formatDateForApi(date);
     final cacheKey = '${station.id}/$dateKey';
     final active = _stationBoardMoreInFlight[cacheKey];
@@ -695,7 +935,9 @@ class AppState extends ChangeNotifier {
 
   Future<void> _loadNextStationBoardDay(
       Station station, DateTime date, String cacheKey) async {
+    final generation = _stationBoardLoadGeneration;
     isStationBoardLoadingMore = true;
+    stationBoardError = null;
     notifyListeners();
     try {
       final response = _stationBoardScheduleDayCache[cacheKey] ??
@@ -706,98 +948,32 @@ class AppState extends ChangeNotifier {
             fullRoute: true,
           );
       _stationBoardScheduleDayCache[cacheKey] = response;
-      final routes = response['routes'] as List<dynamic>? ?? const [];
-      final departures = <StationBoardItem>[];
-      final arrivals = <StationBoardItem>[];
-      final knownDepartures = {
-        for (final item in stationDepartures)
-          '${item.scheduleId}/${item.orderId}/${item.operatingDate}/d'
-      };
-      final knownArrivals = {
-        for (final item in stationArrivals)
-          '${item.scheduleId}/${item.orderId}/${item.operatingDate}/a'
-      };
-      for (final rawRoute in routes.whereType<Map<String, dynamic>>()) {
-        final scheduleId = (rawRoute['scheduleId'] as num?)?.toInt() ?? 0;
-        final orderId = (rawRoute['orderId'] as num?)?.toInt() ?? 0;
-        final routeStations =
-            rawRoute['stations'] as List<dynamic>? ?? const [];
-        if (routeStations.isEmpty) continue;
-        final first = routeStations.first as Map<String, dynamic>;
-        final last = routeStations.last as Map<String, dynamic>;
-        final category = rawRoute['commercialCategorySymbol']?.toString() ?? '';
-        final carrierCode = rawRoute['carrierCode']?.toString() ?? '';
-        final carrier = carrierNames[carrierCode] ?? carrierCode;
-        final name = rawRoute['name']?.toString() ?? '';
-        for (final rawStop in routeStations.whereType<Map<String, dynamic>>()) {
-          if ((rawStop['stationId'] as num?)?.toInt() != station.id) continue;
-          StationBoardItem makeItem({required bool arrival}) {
-            final time =
-                (arrival ? rawStop['arrivalTime'] : rawStop['departureTime'])
-                    ?.toString();
-            final platform = (arrival
-                        ? rawStop['arrivalPlatform']
-                        : rawStop['departurePlatform'])
-                    ?.toString() ??
-                rawStop['platform']?.toString();
-            final track =
-                (arrival ? rawStop['arrivalTrack'] : rawStop['departureTrack'])
-                        ?.toString() ??
-                    rawStop['track']?.toString();
-            final number = (arrival
-                        ? rawStop['arrivalTrainNumber']
-                        : rawStop['departureTrainNumber'])
-                    ?.toString() ??
-                rawRoute['nationalNumber']?.toString() ??
-                '';
-            return StationBoardItem(
-              time: app_date.formatTimeSafe(time),
-              trainNumber: number,
-              trainName: name,
-              trainCategory: category,
-              carrier: carrier,
-              direction: getStationName(
-                  ((arrival ? first : last)['stationId'] as num?)?.toInt() ??
-                      0),
-              scheduleId: scheduleId,
-              orderId: orderId,
-              operatingDate: app_date.formatDateForApi(date),
-              platform: platform,
-              track: track,
-              plannedTime: app_date.formatTimeSafe(time),
-              raw: rawRoute,
-            );
-          }
-
-          if (rawStop['departureTime'] != null) {
-            final item = makeItem(arrival: false);
-            if (knownDepartures
-                .add('$scheduleId/$orderId/${item.operatingDate}/d')) {
-              departures.add(item);
-            }
-          }
-          if (rawStop['arrivalTime'] != null) {
-            final item = makeItem(arrival: true);
-            if (knownArrivals
-                .add('$scheduleId/$orderId/${item.operatingDate}/a')) {
-              arrivals.add(item);
-            }
-          }
-        }
+      final departures = [...stationDepartures];
+      final arrivals = [...stationArrivals];
+      _appendScheduledBoardItems(station, date, response, departures, arrivals);
+      if (currentStation?.id != station.id ||
+          generation != _stationBoardLoadGeneration) {
+        return;
       }
-      if (currentStation?.id != station.id) return;
-      stationDepartures = [...stationDepartures, ...departures];
-      stationArrivals = [...stationArrivals, ...arrivals];
-      if (departures.isEmpty && arrivals.isEmpty) {
-        stationBoardCanLoadMore = false;
-      }
+      stationDepartures = departures;
+      stationArrivals = arrivals;
+      _stationBoardLoadedThrough[station.id] = date;
+      stationBoardCanLoadMore =
+          date.isBefore(DateUtils.addDaysToDate(DateTime.now(), 60));
       _sortBoardItems();
-      stationBoardLastUpdated = DateTime.now();
+      _saveBoardSnapshot();
     } catch (e) {
+      if (currentStation?.id == station.id &&
+          generation == _stationBoardLoadGeneration) {
+        stationBoardError =
+            'Nie udało się pobrać kolejnego dnia. Spróbuj ponownie.';
+      }
       debugPrint('[AppState] loadNextStationBoardDay error: $e');
     } finally {
-      isStationBoardLoadingMore = false;
-      notifyListeners();
+      if (generation == _stationBoardLoadGeneration) {
+        isStationBoardLoadingMore = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -850,121 +1026,120 @@ class AppState extends ChangeNotifier {
         }
       } catch (e) {
         debugPrint('[AppState] searchTrainByNumber fetch schedules error: $e');
+        rethrow;
       }
     }
 
     final List<TrainSearchResult> results = [];
+    _rememberRouteMetadata(dateStr, rawRoutes);
     final Set<String> seenKeys =
         {}; // Deduplication key: scheduleId_orderId_operatingDate
 
-    if (rawRoutes != null) {
-      for (final r in rawRoutes) {
-        if (r is! Map<String, dynamic>) continue;
-        final route = TrainRoute.fromJson(r);
+    for (final r in rawRoutes) {
+      if (r is! Map<String, dynamic>) continue;
+      final route = TrainRoute.fromJson(r);
 
-        // 1. Mandatory operating date verification: train MUST operate on dateStr
-        if (!route.operatingDates.contains(dateStr)) {
-          debugPrint(
-              '[AppState] Skipped invalid train result: ${route.scheduleId}/${route.orderId} does not operate on $dateStr');
-          continue;
-        }
+      // 1. Mandatory operating date verification: train MUST operate on dateStr
+      if (!route.operatingDates.contains(dateStr)) {
+        debugPrint(
+            '[AppState] Skipped invalid train result: ${route.scheduleId}/${route.orderId} does not operate on $dateStr');
+        continue;
+      }
 
-        // 2. Must have valid stations route
-        if (route.stations.isEmpty) {
-          debugPrint(
-              '[AppState] Skipped invalid train result: ${route.scheduleId}/${route.orderId} has empty stations');
-          continue;
-        }
+      // 2. Must have valid stations route
+      if (route.stations.isEmpty) {
+        debugPrint(
+            '[AppState] Skipped invalid train result: ${route.scheduleId}/${route.orderId} has empty stations');
+        continue;
+      }
 
-        final natNum = route.nationalNumber?.trim();
-        final rawName = route.name?.trim();
+      final natNum = route.nationalNumber?.trim();
+      final rawName = route.name?.trim();
 
-        bool isMatch = false;
+      bool isMatch = false;
 
-        // A. Exact train number search if user entered digits (e.g. "5410" or "IC 5410")
-        if (queryDigits != null && queryDigits.isNotEmpty) {
-          // Check nationalNumber (primary)
-          if (natNum != null && natNum.isNotEmpty && natNum == queryDigits) {
-            isMatch = true;
-          } else {
-            // Check arrival/departure train number on stops
-            for (final st in route.stations) {
-              if (st.departureTrainNumber?.trim() == queryDigits ||
-                  st.arrivalTrainNumber?.trim() == queryDigits) {
-                isMatch = true;
-                break;
-              }
+      // A. Exact train number search if user entered digits (e.g. "5410" or "IC 5410")
+      if (queryDigits != null && queryDigits.isNotEmpty) {
+        // Check nationalNumber (primary)
+        if (natNum != null && natNum.isNotEmpty && natNum == queryDigits) {
+          isMatch = true;
+        } else {
+          // Check arrival/departure train number on stops
+          for (final st in route.stations) {
+            if (st.departureTrainNumber?.trim() == queryDigits ||
+                st.arrivalTrainNumber?.trim() == queryDigits) {
+              isMatch = true;
+              break;
             }
           }
         }
+      }
 
-        // B. Train name search strictly in route.name if name exists
-        if (!isMatch &&
-            rawName != null &&
-            rawName.isNotEmpty &&
-            normalizedQuery.length >= 2) {
-          final normName = normalizeText(rawName);
-          if (normName == normalizedQuery ||
-              normName.contains(normalizedQuery)) {
-            isMatch = true;
-          }
+      // B. Train name search strictly in route.name if name exists
+      if (!isMatch &&
+          rawName != null &&
+          rawName.isNotEmpty &&
+          normalizedQuery.length >= 2) {
+        final normName = normalizeText(rawName);
+        if (normName == normalizedQuery || normName.contains(normalizedQuery)) {
+          isMatch = true;
         }
+      }
 
-        if (isMatch) {
-          // Deduplication key: scheduleId_orderId_operatingDate
-          final dedupeKey = '${route.scheduleId}_${route.orderId}_$dateStr';
-          if (seenKeys.contains(dedupeKey)) continue;
-          seenKeys.add(dedupeKey);
+      if (isMatch) {
+        // Deduplication key: scheduleId_orderId_operatingDate
+        final dedupeKey = '${route.scheduleId}_${route.orderId}_$dateStr';
+        if (seenKeys.contains(dedupeKey)) continue;
+        seenKeys.add(dedupeKey);
 
-          // Route origin and destination from full real route
-          final firstStop = route.stations.first;
-          final lastStop = route.stations.last;
+        // Route origin and destination from full real route
+        final firstStop = route.stations.first;
+        final lastStop = route.stations.last;
 
-          final fromName = getStationName(firstStop.stationId);
-          final toName = getStationName(lastStop.stationId);
+        final fromName = getStationName(firstStop.stationId);
+        final toName = getStationName(lastStop.stationId);
 
-          // Real departure and arrival times from specific run
-          final depTime = firstStop.departureTime != null
-              ? app_date.formatTimeSpan(firstStop.departureTime)
-              : (firstStop.arrivalTime != null
-                  ? app_date.formatTimeSpan(firstStop.arrivalTime)
-                  : '--:--');
-          final arrTime = lastStop.arrivalTime != null
-              ? app_date.formatTimeSpan(lastStop.arrivalTime)
-              : (lastStop.departureTime != null
-                  ? app_date.formatTimeSpan(lastStop.departureTime)
-                  : '--:--');
+        // Real departure and arrival times from specific run
+        final depTime = firstStop.departureTime != null
+            ? app_date.formatTimeSpan(firstStop.departureTime)
+            : (firstStop.arrivalTime != null
+                ? app_date.formatTimeSpan(firstStop.arrivalTime)
+                : '--:--');
+        final arrTime = lastStop.arrivalTime != null
+            ? app_date.formatTimeSpan(lastStop.arrivalTime)
+            : (lastStop.departureTime != null
+                ? app_date.formatTimeSpan(lastStop.departureTime)
+                : '--:--');
 
-          // Effective displayed number: strictly from API, NEVER the user query!
-          final displayNumber = (natNum != null && natNum.isNotEmpty)
-              ? natNum
-              : (firstStop.departureTrainNumber?.trim() ??
-                  firstStop.arrivalTrainNumber?.trim() ??
-                  '');
+        // Effective displayed number: strictly from API, NEVER the user query!
+        final displayNumber = (natNum != null && natNum.isNotEmpty)
+            ? natNum
+            : (firstStop.departureTrainNumber?.trim() ??
+                firstStop.arrivalTrainNumber?.trim() ??
+                '');
 
-          final result = TrainSearchResult(
-            scheduleId: route.scheduleId,
-            orderId: route.orderId,
-            nationalNumber: displayNumber,
-            trainName: rawName,
-            carrierCode: route.carrierCode,
-            carrierName: getCarrierName(route.carrierCode),
-            category: getCategoryName(route.commercialCategorySymbol),
-            fromStationName: fromName,
-            toStationName: toName,
-            departureTime: depTime,
-            arrivalTime: arrTime,
-            operatingDates: route.operatingDates,
-            operatingDate: dateStr,
-            route: route,
-          );
+        final result = TrainSearchResult(
+          scheduleId: route.scheduleId,
+          orderId: route.orderId,
+          nationalNumber: displayNumber,
+          trainName: rawName,
+          carrierCode: route.carrierCode,
+          carrierName: getCarrierName(route.carrierCode),
+          category: route.commercialCategorySymbol,
+          fromStationName: fromName,
+          toStationName: toName,
+          departureTime: depTime,
+          arrivalTime: arrTime,
+          operatingDates: route.operatingDates,
+          operatingDate: dateStr,
+          route: route,
+        );
 
-          // Debug log source of result as required
-          debugPrint(
-              '[TrainSearch] Result: scheduleId=${result.scheduleId}, orderId=${result.orderId}, nationalNumber=${result.nationalNumber}, name=${result.trainName}, operatingDate=${result.operatingDate}, firstStation=${result.fromStationName}, lastStation=${result.toStationName}');
+        // Debug log source of result as required
+        debugPrint(
+            '[TrainSearch] Result: scheduleId=${result.scheduleId}, orderId=${result.orderId}, nationalNumber=${result.nationalNumber}, name=${result.trainName}, operatingDate=${result.operatingDate}, firstStation=${result.fromStationName}, lastStation=${result.toStationName}');
 
-          results.add(result);
-        }
+        results.add(result);
       }
     }
 
@@ -974,7 +1149,7 @@ class AppState extends ChangeNotifier {
   }
 
   String getStationName(int stationId) {
-    return stationNames[stationId] ?? 'Stacja $stationId';
+    return stationNames[stationId] ?? 'Nazwa stacji niedostępna';
   }
 
   String getCarrierName(String? code) {
@@ -1021,21 +1196,25 @@ class AppState extends ChangeNotifier {
 
     // Fetch real-time operations
     Map<String, TrainOperation> operationsMap = {};
-    try {
-      final opsResponse = await api.getOperations(
-        stations: '${fromStation.id},${toStation.id}',
-        withPlanned: true,
-      );
-      final rawTrains = opsResponse['trains'] as List<dynamic>? ?? [];
-      for (final t in rawTrains) {
-        final op = TrainOperation.fromJson(t as Map<String, dynamic>);
-        final key = '${op.scheduleId}_${op.orderId}';
-        operationsMap[key] = op;
+    if (!DateUtils.dateOnly(date).isAfter(DateUtils.dateOnly(DateTime.now()))) {
+      try {
+        final opsResponse = await api.getOperations(
+          stations: '${fromStation.id},${toStation.id}',
+          withPlanned: true,
+        );
+        final rawTrains = opsResponse['trains'] as List<dynamic>? ?? [];
+        for (final t in rawTrains) {
+          final op = TrainOperation.fromJson(t as Map<String, dynamic>);
+          // The live feed can contain another occurrence of the same train.
+          // Never attach today's actual timestamps to tomorrow's schedule.
+          if (op.operatingDate != dateStr) continue;
+          final key = '${op.scheduleId}_${op.orderId}';
+          operationsMap[key] = op;
+        }
+      } catch (e) {
+        debugPrint('[AppState] searchOperations error: $e');
       }
-    } catch (e) {
-      debugPrint('[AppState] searchOperations error: $e');
     }
-
     final List<ConnectionResult> directResults = [];
     final List<TrainRoute> potentialTransferRoutes = [];
 
@@ -1071,7 +1250,7 @@ class AppState extends ChangeNotifier {
           fromStationName: fromStation.name,
           toStationName: toStation.name,
           carrierName: getCarrierName(route.carrierCode),
-          commercialCategory: getCategoryName(route.commercialCategorySymbol),
+          commercialCategory: route.commercialCategorySymbol ?? '',
           operation: operation,
           isDirect: true,
           transfersCount: 0,
@@ -1135,8 +1314,7 @@ class AppState extends ChangeNotifier {
                 fromStationName: getStationName(transferStationId),
                 toStationName: toStation.name,
                 carrierName: getCarrierName(route2.carrierCode),
-                commercialCategory:
-                    getCategoryName(route2.commercialCategorySymbol),
+                commercialCategory: route2.commercialCategorySymbol ?? '',
                 isDirect: false,
                 transfersCount: 1,
                 operatingDate: dateStr,
@@ -1149,8 +1327,7 @@ class AppState extends ChangeNotifier {
                 fromStationName: fromStation.name,
                 toStationName: toStation.name,
                 carrierName: getCarrierName(route1.carrierCode),
-                commercialCategory:
-                    getCategoryName(route1.commercialCategorySymbol),
+                commercialCategory: route1.commercialCategorySymbol ?? '',
                 isDirect: false,
                 transfersCount: 1,
                 secondLeg: leg2,
@@ -1169,10 +1346,114 @@ class AppState extends ChangeNotifier {
 
   /// Get disruptions data
   Future<Map<String, dynamic>> getDisruptions() async {
-    return await api.getDisruptions();
+    if (_cachedDisruptions != null &&
+        _disruptionsLoadedAt != null &&
+        DateTime.now().difference(_disruptionsLoadedAt!).inSeconds < 30) {
+      return _cachedDisruptions!;
+    }
+    final data = await api.getDisruptions();
+    _cachedDisruptions = data;
+    _disruptionsLoadedAt = DateTime.now();
+    if (_servicesReady) await cache.saveDisruptions(data);
+    return data;
   }
 
-  final Map<String, Future<Map<String, dynamic>>> _affectedTrainLookups = {};
+  final _affectedTrainLookups =
+      BoundedCache<String, Future<Map<String, dynamic>>>(64);
+  final _routeLookupTimes = BoundedCache<String, DateTime>(64);
+  final _routeMetadata =
+      BoundedCache<String, Map<String, Map<String, dynamic>>>(2);
+  final _routeMetadataTimes = BoundedCache<String, DateTime>(2);
+  final Map<String, Future<bool>> _disruptionIndexLoads = {};
+  final Map<String, DateTime> _disruptionIndexTimes = {};
+
+  /// Large alerts need one daily index, instead of a request for every train.
+  Future<bool> prepareAffectedTrains(List<Map<String, dynamic>> refs) async {
+    final unresolved = refs.where((ref) =>
+        (ref['nationalNumber'] ?? ref['trainNumber'] ?? '').toString().isEmpty);
+    if (unresolved.length <= 8) return true;
+    final dates = unresolved
+        .map((ref) => (ref['operatingDate'] ??
+                ref['od'] ??
+                app_date.formatDateForApi(DateTime.now()))
+            .toString())
+        .toSet();
+    for (final date in dates) {
+      final loaded = _disruptionIndexTimes[date];
+      if (loaded != null && DateTime.now().difference(loaded).inMinutes >= 5) {
+        _disruptionIndexLoads.remove(date);
+      }
+      _disruptionIndexLoads.putIfAbsent(date, () {
+        _disruptionIndexTimes[date] = DateTime.now();
+        return _loadDisruptionIndex(date);
+      });
+      if (!await _disruptionIndexLoads[date]!) return false;
+    }
+    return true;
+  }
+
+  Future<bool> _loadDisruptionIndex(String date) async {
+    _expireRouteMetadata(date);
+    if ((_routeMetadata[date]?.isNotEmpty ?? false)) return true;
+    try {
+      final saved = _servicesReady ? cache.loadTrainIndex(date) : null;
+      final routes = saved != null && saved.isNotEmpty
+          ? saved
+          : (await api.getSchedules(
+                  dateFrom: date,
+                  dateTo: date,
+                  fullRoute: true))['routes'] as List<dynamic>? ??
+              [];
+      _rememberRouteMetadata(date, routes);
+      if (_servicesReady && routes.isNotEmpty) {
+        await cache.saveTrainIndex(date, routes);
+      }
+      return true;
+    } catch (error) {
+      debugPrint('[Disruptions] Train index unavailable: $error');
+      return false;
+    }
+  }
+
+  void _rememberRouteMetadata(String date, List<dynamic> routes) {
+    _routeMetadata[date] = {
+      for (final route in routes.whereType<Map<String, dynamic>>())
+        '${route['scheduleId']}/${route['orderId']}': route,
+    };
+    _routeMetadataTimes[date] = DateTime.now();
+  }
+
+  void _expireRouteMetadata(String date) {
+    final saved = _routeMetadataTimes[date];
+    if (saved == null ||
+        DateTime.now().difference(saved) > CacheService.scheduleCacheDuration) {
+      _routeMetadata.remove(date);
+      _routeMetadataTimes.remove(date);
+    }
+  }
+
+  Future<Map<String, dynamic>> getScheduleRoute(int sid, int oid,
+      {String? operatingDate}) async {
+    final date = operatingDate ?? app_date.formatDateForApi(DateTime.now());
+    _expireRouteMetadata(date);
+    if (!_routeMetadata.containsKey(date) && _servicesReady) {
+      _rememberRouteMetadata(date, cache.loadTrainIndex(date) ?? []);
+    }
+    final known = _routeMetadata[date]?['$sid/$oid'];
+    if (known != null) return known;
+    final key = '$sid/$oid/$date';
+    final loaded = _routeLookupTimes[key];
+    if (loaded != null && DateTime.now().difference(loaded).inMinutes >= 5) {
+      _affectedTrainLookups.remove(key);
+    }
+    if (!_affectedTrainLookups.containsKey(key)) {
+      _routeLookupTimes[key] = DateTime.now();
+      _affectedTrainLookups[key] = api.getScheduleRoute(sid, oid);
+    }
+    // Keeping failures briefly prevents a rebuild from retrying an unavailable
+    // route for every chip. A subsequent load can retry after the cache expires.
+    return _affectedTrainLookups[key]!;
+  }
 
   Future<Map<String, dynamic>> resolveAffectedTrain(
       Map<String, dynamic> ref) async {
@@ -1195,10 +1476,9 @@ class AppState extends ChangeNotifier {
         };
       }
     }
-    final key = '$sid/$oid';
     try {
       final route =
-          await (_affectedTrainLookups[key] ??= api.getScheduleRoute(sid, oid));
+          await getScheduleRoute(sid, oid, operatingDate: date?.toString());
       return {
         ...ref,
         'nationalNumber': route['nationalNumber'],
@@ -1206,7 +1486,6 @@ class AppState extends ChangeNotifier {
         'name': route['name']
       };
     } catch (_) {
-      _affectedTrainLookups.remove(key);
       return ref;
     }
   }
@@ -1224,8 +1503,9 @@ class AppState extends ChangeNotifier {
       final data =
           await api.getTrainOperation(scheduleId, orderId, operatingDate);
       return TrainOperation.fromJson(data);
-    } catch (_) {
-      return null;
+    } on ApiException catch (error) {
+      if (error.statusCode == 404) return null;
+      rethrow;
     }
   }
 }

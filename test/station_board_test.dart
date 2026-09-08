@@ -7,12 +7,48 @@ import 'package:trainly/screens/station_screen.dart';
 
 void main() {
   testWidgets(
+      'Board date follows the station event, not the overnight route start',
+      (tester) async {
+    final now = DateTime.now();
+    final event = now.add(const Duration(minutes: 5));
+    final state = AppState()
+      ..currentStation = Station(id: 1, name: 'Opole Główne')
+      ..stationDepartures = [
+        StationBoardItem(
+            time: event.toIso8601String(),
+            actualTime: event.toIso8601String(),
+            operatingDate: now
+                .subtract(const Duration(days: 1))
+                .toIso8601String()
+                .split('T')
+                .first,
+            trainNumber: '123',
+            trainCategory: 'IC',
+            carrier: '',
+            direction: 'Brzeg',
+            scheduleId: 1,
+            orderId: 1,
+            raw: {}),
+      ];
+    await tester.pumpWidget(ChangeNotifierProvider<AppState>.value(
+        value: state, child: const MaterialApp(home: StationScreen())));
+    await tester.pumpAndSettle();
+    final date =
+        '${event.day.toString().padLeft(2, '0')}.${event.month.toString().padLeft(2, '0')}.${event.year}';
+    expect(find.textContaining(date), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    state.dispose();
+  });
+
+  testWidgets(
       'StationScreen renders compact railway board across edge cases and 320px width without RenderFlex overflow',
       (WidgetTester tester) async {
     // Set 320px screen width (narrowest mobile screen)
     tester.view.physicalSize = const Size(320, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
     final appState = AppState();
     appState.currentStation = Station(id: 1, name: 'Warszawa Centralna');
@@ -21,7 +57,7 @@ void main() {
     final now = DateTime.now();
     String futureTime(int offsetMinutes) {
       final t = now.add(Duration(minutes: offsetMinutes));
-      return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+      return t.toIso8601String();
     }
 
     // Inject test departures covering all required edge cases
@@ -181,6 +217,13 @@ void main() {
     expect(find.text('IC 5410'), findsOneWidget);
     expect(find.text('REGIO 93450'), findsOneWidget);
     expect(find.text('IC 3818'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('IC 37000'), 100,
+        scrollable: find
+            .byWidgetPredicate((widget) =>
+                widget is Scrollable &&
+                widget.axisDirection == AxisDirection.down)
+            .hitTestable()
+            .first);
     expect(find.text('IC 37000'), findsOneWidget);
 
     // Verify train names
@@ -195,7 +238,7 @@ void main() {
     expect(find.text('Per. II/3'), findsOneWidget);
 
     // Verify delay texts
-    expect(find.text('+0'), findsWidgets);
+    expect(find.text('Planowo'), findsWidgets);
     expect(find.text('Rozkład'), findsOneWidget);
     expect(find.text('+12'), findsOneWidget);
     expect(find.text('+3'), findsOneWidget);
@@ -244,6 +287,7 @@ void main() {
 
     final state = AppState()
       ..currentStation = Station(id: 1, name: 'Warszawa Centralna')
+      ..stationBoardCanLoadMore = false
       ..stationDepartures = [
         item('1001', now.subtract(const Duration(minutes: 20))),
         ...List.generate(
@@ -273,9 +317,27 @@ void main() {
       await tester.pumpAndSettle();
     }
     expect(find.text('IC 1001'), findsOneWidget);
-    await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('show-more-departures')), 250,
-        scrollable: find.byType(Scrollable).last);
+    Future<void> revealPageAction(String key) async {
+      // Use the scroll position here: Android's real pointer coordinates do
+      // not follow the overridden test viewport density. Manual emulator QA
+      // separately verifies swipe gestures using the native screen size.
+      final scrollable = find
+          .byWidgetPredicate((widget) =>
+              widget is Scrollable &&
+              widget.axisDirection == AxisDirection.down)
+          .hitTestable()
+          .first;
+      for (var i = 0;
+          i < 8 && find.byKey(ValueKey(key)).hitTestable().evaluate().isEmpty;
+          i++) {
+        final position = tester.state<ScrollableState>(scrollable).position;
+        position.jumpTo(position.maxScrollExtent);
+        await tester.pumpAndSettle();
+      }
+      expect(find.byKey(ValueKey(key)).hitTestable(), findsOneWidget);
+    }
+
+    await revealPageAction('show-more-departures');
     expect(find.text('Pokaż kolejne odjazdy (2)'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('show-more-departures')));
     await tester.pumpAndSettle();
@@ -287,9 +349,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('toggle-earlier-arrivals')));
     await tester.pumpAndSettle();
     expect(find.text('IC 2001'), findsOneWidget);
-    await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('show-more-arrivals')), 250,
-        scrollable: find.byType(Scrollable).last);
+    await revealPageAction('show-more-arrivals');
     expect(find.text('Pokaż kolejne przyjazdy (2)'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('show-more-arrivals')));
     await tester.pumpAndSettle();

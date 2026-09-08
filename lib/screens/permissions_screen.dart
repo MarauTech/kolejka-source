@@ -11,17 +11,31 @@ class PermissionsScreen extends StatefulWidget {
   State<PermissionsScreen> createState() => _PermissionsScreenState();
 }
 
-class _PermissionsScreenState extends State<PermissionsScreen> {
+class _PermissionsScreenState extends State<PermissionsScreen>
+    with WidgetsBindingObserver {
   LocationPermissionStatus _status = LocationPermissionStatus.denied;
   bool _isChecking = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _checkStatus();
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _checkStatus();
+  }
+
   Future<void> _checkStatus() async {
+    if (!mounted || _isChecking) return;
     setState(() => _isChecking = true);
     final appState = context.read<AppState>();
     final status = await appState.locationService.checkPermission();
@@ -34,14 +48,22 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
   }
 
   Future<void> _requestPermission() async {
+    if (!mounted || _isChecking) return;
+    setState(() => _isChecking = true);
     final appState = context.read<AppState>();
-    await appState.locationService.requestPermission();
-    await _checkStatus();
+    final status = await appState.locationService.requestPermission();
+    if (mounted) {
+      setState(() {
+        _status = status;
+        _isChecking = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
 
     String statusTitle;
     String statusSubtitle;
@@ -53,28 +75,28 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
         statusTitle = 'Uprawnienie przyznane';
         statusSubtitle =
             'Aplikacja może automatycznie wykrywać najbliższą stację kolejową.';
-        statusColor = Colors.green;
+        statusColor = Color(dark ? 0xFF81C784 : 0xFF23733C);
         statusIcon = Icons.check_circle_outline;
         break;
       case LocationPermissionStatus.serviceDisabled:
         statusTitle = 'Lokalizacja w urządzeniu jest wyłączona';
         statusSubtitle =
             'Moduł GPS w telefonie jest wyłączony. Włącz lokalizację w ustawieniach systemu.';
-        statusColor = Colors.orange;
+        statusColor = Color(dark ? 0xFFFFB74D : 0xFF955300);
         statusIcon = Icons.location_off_outlined;
         break;
       case LocationPermissionStatus.permanentlyDenied:
         statusTitle = 'Dostęp zablokowany w systemie';
         statusSubtitle =
             'Uprawnienie zostało trwale zablokowane. Aby je włączyć, przejdź do ustawień aplikacji w Androidzie.';
-        statusColor = Colors.red;
+        statusColor = theme.colorScheme.error;
         statusIcon = Icons.block;
         break;
       case LocationPermissionStatus.denied:
       default:
         statusTitle = 'Brak uprawnienia';
         statusSubtitle = 'Aplikacja nie posiada zgody na odczyt lokalizacji.';
-        statusColor = Colors.orange;
+        statusColor = Color(dark ? 0xFFFFB74D : 0xFF955300);
         statusIcon = Icons.help_outline;
         break;
     }
@@ -130,9 +152,9 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      if (_status != LocationPermissionStatus.granted)
+                      if (_status == LocationPermissionStatus.denied)
                         FilledButton.icon(
-                          onPressed: _requestPermission,
+                          onPressed: _isChecking ? null : _requestPermission,
                           icon: const Icon(Icons.my_location, size: 18),
                           label: const Text('Zezwól na dostęp'),
                         ),
@@ -179,17 +201,18 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
                       Icon(Icons.shield_outlined,
                           size: 22, color: theme.colorScheme.primary),
                       const SizedBox(width: 8),
-                      Text(
+                      Expanded(
+                          child: Text(
                         'Prywatność danych lokalizacyjnych',
                         style: theme.textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
-                      ),
+                      )),
                     ],
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Lokalizacja GPS jest wykorzystywana WYŁĄCZNIE na Twoim urządzeniu do obliczenia odległości (wzór Haversine) od pobliskich stacji kolejowych pobranych z OpenStreetMap.\n\n'
+                    'Lokalizacja pomaga znaleźć najbliższą stację. Aby pobrać pobliskie stacje z OpenStreetMap (Overpass), aplikacja wysyła zapytanie obejmujące okolicę Twojego położenia. Odległości od stacji oblicza na urządzeniu.\n\n'
                     'Aplikacja nie śledzi Twojego położenia w tle, nie profiluje użytkowników ani nie przesyła Twoich współrzędnych do zewnętrznych serwerów reklamowych.\n\n'
                     'W dowolnej chwili możesz korzystać z aplikacji bez uprawnień GPS, wybierając stacje ręcznie z wyszukiwarki.',
                     style: TextStyle(
